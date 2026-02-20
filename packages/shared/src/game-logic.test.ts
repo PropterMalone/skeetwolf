@@ -7,6 +7,8 @@ import {
 	checkWinCondition,
 	createGame,
 	eliminatePlayer,
+	getPhaseDeadline,
+	isPhaseExpired,
 	resolveNight,
 	submitNightAction,
 	tallyVotes,
@@ -275,5 +277,50 @@ describe('phase transitions', () => {
 		const advanced = advancePhase(state);
 		expect(advanced.nightActions).toHaveLength(0);
 		expect(advanced.votes).toHaveLength(0);
+	});
+
+	it('sets phaseStartedAt on advance', () => {
+		const state = createGame('test');
+		const before = Date.now();
+		const advanced = advancePhase(state);
+		expect(advanced.phaseStartedAt).toBeGreaterThanOrEqual(before);
+	});
+});
+
+describe('phase timers', () => {
+	it('returns deadline based on phase duration', () => {
+		let state = gameWithPlayers(6);
+		state = assignRoles(state, noShuffle).state;
+		// Night phase — deadline = phaseStartedAt + nightDurationMs
+		const deadline = getPhaseDeadline(state);
+		expect(deadline).toBe(state.phaseStartedAt + state.config.nightDurationMs);
+	});
+
+	it('returns null for non-active games', () => {
+		const state = createGame('test'); // signup phase
+		expect(getPhaseDeadline(state)).toBeNull();
+	});
+
+	it('detects expired phase', () => {
+		let state = gameWithPlayers(6);
+		state = assignRoles(state, noShuffle).state;
+		// Force phaseStartedAt to the past
+		state = { ...state, phaseStartedAt: Date.now() - state.config.nightDurationMs - 1 };
+		expect(isPhaseExpired(state, Date.now())).toBe(true);
+	});
+
+	it('does not expire before deadline', () => {
+		let state = gameWithPlayers(6);
+		state = assignRoles(state, noShuffle).state;
+		// Just started
+		expect(isPhaseExpired(state, Date.now())).toBe(false);
+	});
+
+	it('uses day duration for day phase', () => {
+		let state = gameWithPlayers(6);
+		state = assignRoles(state, noShuffle).state;
+		state = advancePhase(state); // Night 0 → Day 1
+		const deadline = getPhaseDeadline(state);
+		expect(deadline).toBe(state.phaseStartedAt + state.config.dayDurationMs);
 	});
 });

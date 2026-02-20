@@ -19,6 +19,7 @@ import { DEFAULT_CONFIG, alignmentOf } from './types.js';
 // -- Game Creation --
 
 export function createGame(id: GameId, config: Partial<GameConfig> = {}): GameState {
+	const now = Date.now();
 	return {
 		id,
 		config: { ...DEFAULT_CONFIG, ...config },
@@ -29,7 +30,8 @@ export function createGame(id: GameId, config: Partial<GameConfig> = {}): GameSt
 		nightActions: [],
 		winner: null,
 		announcementUri: null,
-		createdAt: Date.now(),
+		phaseStartedAt: now,
+		createdAt: now,
 	};
 }
 
@@ -92,6 +94,7 @@ export function assignRoles(
 			players,
 			status: 'active',
 			phase: { kind: 'night', number: 0 },
+			phaseStartedAt: Date.now(),
 		},
 	};
 }
@@ -301,9 +304,24 @@ export function advancePhase(state: GameState): GameState {
 	return {
 		...state,
 		phase: next,
+		phaseStartedAt: Date.now(),
 		votes: [],
 		nightActions: [],
 	};
+}
+
+/** Returns the deadline timestamp for the current phase, or null if not active */
+export function getPhaseDeadline(state: GameState): number | null {
+	if (state.status !== 'active') return null;
+	const duration =
+		state.phase.kind === 'day' ? state.config.dayDurationMs : state.config.nightDurationMs;
+	return state.phaseStartedAt + duration;
+}
+
+/** Check if the current phase has expired */
+export function isPhaseExpired(state: GameState, now: number): boolean {
+	const deadline = getPhaseDeadline(state);
+	return deadline !== null && now >= deadline;
 }
 
 function nextPhase(current: Phase): Phase {
