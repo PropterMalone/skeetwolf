@@ -1,14 +1,15 @@
 /**
- * Integration test: engine → feed.
+ * Integration tests: engine game flow + feed.
  *
- * Runs a full game lifecycle through GameManager with a real SQLite DB,
- * then verifies the feed handler serves the correct posts.
+ * Runs game lifecycles through GameManager with a real SQLite DB,
+ * then verifies game state, DB records, DM captures, and feed output.
  */
 import { existsSync, unlinkSync } from 'node:fs';
+import type { GameState, Player, Role } from '@skeetwolf/shared';
 import { alignmentOf } from '@skeetwolf/shared';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { type FeedHandler, createFeedHandler } from '../../feed/src/handler.js';
-import { openDatabase } from './db.js';
+import { loadGame, openDatabase } from './db.js';
 import { GameManager } from './game-manager.js';
 
 const TEST_DB = 'test-integration.db';
@@ -252,5 +253,326 @@ describe('engine → feed integration', () => {
 		// Should have an announcement and at least one phase post
 		expect(kindMap.get('announcement')).toBe(1);
 		expect(kindMap.get('phase')).toBeGreaterThanOrEqual(1);
+	});
+});
+
+// -- Helpers for full game flow tests --
+
+/** Throws if value is nullish — satisfies biome's no-non-null-assertion rule */
+function must<T>(value: T | null | undefined, label = 'value'): T {
+	if (value == null) throw new Error(`expected ${label} to exist`);
+	return value;
+}
+
+function findByRole(players: Player[], role: Role): Player {
+	return must(
+		players.find((pl) => pl.role === role && pl.alive),
+		`alive player with role ${role}`,
+	);
+}
+
+function findVillager(players: Player[]): Player {
+	return must(
+		players.find((p) => p.role === 'villager' && p.alive),
+		'alive villager',
+	);
+}
+
+function findAllByAlignment(players: Player[], alignment: 'town' | 'mafia'): Player[] {
+	return players.filter((p) => alignmentOf(p.role) === alignment && p.alive);
+}
+
+function getPostKinds(db: ReturnType<typeof openDatabase>, gameId: string): Map<string, number> {
+	const rows = db
+		.prepare(
+			'SELECT kind, COUNT(*) as count FROM game_posts WHERE game_id = ? GROUP BY kind ORDER BY kind',
+		)
+		.all(gameId) as { kind: string; count: number }[];
+	return new Map(rows.map((r) => [r.kind, r.count]));
+}
+
+function mustLoadGame(db: ReturnType<typeof openDatabase>, gameId: string): GameState {
+	return must(loadGame(db, gameId), `game ${gameId}`);
+}
+
+/** Set up a game with N players, started and in Night 0. */
+async function setupGame(db: ReturnType<typeof openDatabase>, gameId: string, playerCount: number) {
+	const agent = createMockAgent();
+	const dm = createMockDm();
+	const manager = new GameManager(db, agent, dm.sender);
+
+	await manager.newGame(gameId);
+	for (let i = 0; i < playerCount; i++) {
+		manager.signup(gameId, `did:plc:p${i}`, `player${i}.bsky.social`);
+	}
+	const err = await manager.startGame(gameId);
+	if (err) throw new Error(`startGame failed: ${err}`);
+
+	const state = must(manager.findGameForPlayer('did:plc:p0'), 'game after start');
+
+	return { manager, state, dm, agent };
+}
+
+describe('full game flow', () => {
+	let db: ReturnType<typeof openDatabase>;
+
+	beforeEach(() => {
+		postCounter = 0;
+		cleanupDb();
+		db = openDatabase(TEST_DB);
+	});
+
+	afterEach(() => {
+		db.close();
+		cleanupDb();
+	});
+
+	it('town wins — full game to completion', async () => {
+		// 5 players: 1 godfather + 4 villagers (no power roles at 5)
+		const { manager, state } = await setupGame(db, 'tw1', 5);
+		const godfather = findByRole(state.players, 'godfather');
+		const townPlayers = findAllByAlignment(state.players, 'town');
+		const firstVictim = must(townPlayers[0], 'first town player');
+
+		// Night 0: godfather kills a townie
+		manager.nightAction('tw1', { actor: godfather.did, kind: 'kill', target: firstVictim.did });
+		await manager.endNight('tw1');
+
+		// Day 1: town votes out the godfather
+		const gameAfterNight = must(manager.findGameForPlayer(godfather.did), 'game after night');
+		const aliveAfterNight = findAllByAlignment(gameAfterNight.players, 'town');
+		for (const p of aliveAfterNight) {
+			manager.vote('tw1', p.did, godfather.did);
+		}
+		await manager.endDay('tw1');
+
+		// Verify game finished with town win
+		const final = mustLoadGame(db, 'tw1');
+		expect(final.winner).toBe('town');
+		expect(final.status).toBe('finished');
+
+		const kinds = getPostKinds(db, 'tw1');
+		expect(kinds.get('game_over')).toBe(1);
+	});
+
+	it('mafia wins — full game to completion', async () => {
+		// 5 players: 1 godfather + 4 villagers
+		const { manager, state } = await setupGame(db, 'mw1', 5);
+		const godfather = findByRole(state.players, 'godfather');
+		let townPlayers = findAllByAlignment(state.players, 'town');
+
+		// Drive rounds: godfather kills each night, town never reaches majority
+		const gameId = 'mw1';
+		let round = 0;
+		while (round < 10) {
+			const target = townPlayers[0];
+			if (!target) break;
+			manager.nightAction(gameId, { actor: godfather.did, kind: 'kill', target: target.did });
+			await manager.endNight(gameId);
+
+			const current = mustLoadGame(db, gameId);
+			if (current.winner) break;
+
+			// Day: no votes → no elimination
+			await manager.endDay(gameId);
+
+			const afterDay = mustLoadGame(db, gameId);
+			if (afterDay.winner) break;
+
+			townPlayers = findAllByAlignment(afterDay.players, 'town');
+			round++;
+		}
+
+		const final = mustLoadGame(db, gameId);
+		expect(final.winner).toBe('mafia');
+		expect(final.status).toBe('finished');
+
+		const kinds = getPostKinds(db, gameId);
+		expect(kinds.get('game_over')).toBe(1);
+	});
+
+	it('night kill produces death post', async () => {
+		const { manager, state } = await setupGame(db, 'nk1', 5);
+		const godfather = findByRole(state.players, 'godfather');
+		const victim = must(findAllByAlignment(state.players, 'town')[0], 'town victim');
+
+		manager.nightAction('nk1', { actor: godfather.did, kind: 'kill', target: victim.did });
+		await manager.endNight('nk1');
+
+		const afterNight = mustLoadGame(db, 'nk1');
+		const victimAfter = must(
+			afterNight.players.find((p) => p.did === victim.did),
+			'victim in state',
+		);
+		expect(victimAfter.alive).toBe(false);
+
+		const kinds = getPostKinds(db, 'nk1');
+		expect(kinds.get('death')).toBeGreaterThanOrEqual(1);
+	});
+
+	it('doctor saves target — no one dies', async () => {
+		// 7 players: godfather, mafioso, cop, doctor, 3 villagers
+		const { manager, state } = await setupGame(db, 'ds1', 7);
+		const godfather = findByRole(state.players, 'godfather');
+		const doctor = findByRole(state.players, 'doctor');
+		const victim = findVillager(state.players);
+
+		// Mafia targets a villager, doctor protects the same villager
+		manager.nightAction('ds1', { actor: godfather.did, kind: 'kill', target: victim.did });
+		manager.nightAction('ds1', { actor: doctor.did, kind: 'protect', target: victim.did });
+		await manager.endNight('ds1');
+
+		const afterNight = mustLoadGame(db, 'ds1');
+		expect(afterNight.players.every((p) => p.alive)).toBe(true);
+
+		const kinds = getPostKinds(db, 'ds1');
+		expect(kinds.has('death')).toBe(false);
+		expect(kinds.get('phase')).toBeGreaterThanOrEqual(2); // game start + no-death dawn
+	});
+
+	it('cop investigates godfather — appears town', async () => {
+		const { manager, state, dm } = await setupGame(db, 'ci1', 7);
+		const cop = findByRole(state.players, 'cop');
+		const godfather = findByRole(state.players, 'godfather');
+
+		manager.nightAction('ci1', { actor: cop.did, kind: 'investigate', target: godfather.did });
+		await manager.endNight('ci1');
+
+		const copDms = dm.sent.filter((m) => m.did === cop.did && m.text.includes('Investigation'));
+		expect(copDms).toHaveLength(1);
+		expect(must(copDms[0], 'cop DM').text).toContain('TOWN');
+	});
+
+	it('cop investigates mafioso — appears mafia', async () => {
+		const { manager, state, dm } = await setupGame(db, 'ci2', 7);
+		const cop = findByRole(state.players, 'cop');
+		const mafioso = findByRole(state.players, 'mafioso');
+
+		manager.nightAction('ci2', { actor: cop.did, kind: 'investigate', target: mafioso.did });
+		await manager.endNight('ci2');
+
+		const copDms = dm.sent.filter((m) => m.did === cop.did && m.text.includes('Investigation'));
+		expect(copDms).toHaveLength(1);
+		expect(must(copDms[0], 'cop DM').text).toContain('MAFIA');
+	});
+
+	it('no-majority day — no elimination', async () => {
+		const { manager, state } = await setupGame(db, 'nm1', 5);
+
+		// End night first to get to day
+		await manager.endNight('nm1');
+
+		// Cast a single scattered vote (not enough for majority)
+		const townPlayers = findAllByAlignment(state.players, 'town');
+		const voter = must(townPlayers[0], 'voter');
+		const target = must(townPlayers[1], 'vote target');
+		manager.vote('nm1', voter.did, target.did);
+
+		await manager.endDay('nm1');
+
+		const afterDay = mustLoadGame(db, 'nm1');
+		expect(afterDay.players.every((p) => p.alive)).toBe(true);
+
+		const kinds = getPostKinds(db, 'nm1');
+		expect(kinds.get('vote_result')).toBe(1);
+
+		expect(afterDay.status).toBe('active');
+		expect(afterDay.phase.kind).toBe('night');
+	});
+
+	it('phase timer expiry via tick()', async () => {
+		await setupGame(db, 'pt1', 5);
+
+		// Game starts in Night 0. Force phaseStartedAt far in the past.
+		const state = mustLoadGame(db, 'pt1');
+		const expired: GameState = {
+			...state,
+			phaseStartedAt: Date.now() - state.config.nightDurationMs - 1,
+		};
+		db.prepare('UPDATE games SET state = ? WHERE id = ?').run(JSON.stringify(expired), 'pt1');
+
+		// Create a fresh manager and hydrate from DB
+		const agent2 = createMockAgent();
+		const dm2 = createMockDm();
+		const manager2 = new GameManager(db, agent2, dm2.sender);
+		manager2.hydrate();
+
+		await manager2.tick(Date.now());
+
+		const afterTick = mustLoadGame(db, 'pt1');
+		expect(afterTick.phase.kind).toBe('day');
+		expect(afterTick.phase.number).toBe(1);
+
+		const kinds = getPostKinds(db, 'pt1');
+		expect(kinds.get('phase')).toBeGreaterThanOrEqual(2);
+	});
+
+	it('hydrate — persist and reload game state', async () => {
+		await setupGame(db, 'hy1', 7);
+
+		const original = mustLoadGame(db, 'hy1');
+
+		// Close and reopen DB, create new manager, hydrate
+		db.close();
+		db = openDatabase(TEST_DB);
+		const agent2 = createMockAgent();
+		const dm2 = createMockDm();
+		const manager2 = new GameManager(db, agent2, dm2.sender);
+		manager2.hydrate();
+
+		const reloaded = must(manager2.findGameForPlayer('did:plc:p0'), 'rehydrated game');
+		expect(reloaded.id).toBe('hy1');
+		expect(reloaded.players).toHaveLength(7);
+		expect(reloaded.status).toBe('active');
+		expect(reloaded.phase).toEqual(original.phase);
+
+		// Roles preserved
+		for (let i = 0; i < 7; i++) {
+			expect(must(reloaded.players[i], `player ${i}`).role).toBe(
+				must(original.players[i], `original player ${i}`).role,
+			);
+			expect(must(reloaded.players[i], `player ${i}`).did).toBe(
+				must(original.players[i], `original player ${i}`).did,
+			);
+		}
+	});
+
+	it('multi-round game — Night 1 → Day 2 → Night 2', async () => {
+		const { manager, state } = await setupGame(db, 'mr1', 7);
+		const godfather = findByRole(state.players, 'godfather');
+
+		// Night 0 → Day 1
+		const victim0 = findVillager(state.players);
+		manager.nightAction('mr1', { actor: godfather.did, kind: 'kill', target: victim0.did });
+		await manager.endNight('mr1');
+
+		let current = mustLoadGame(db, 'mr1');
+		expect(current.phase).toEqual({ kind: 'day', number: 1 });
+		expect(current.nightActions).toHaveLength(0);
+
+		// Day 1: no majority → Night 1
+		await manager.endDay('mr1');
+		current = mustLoadGame(db, 'mr1');
+		expect(current.phase).toEqual({ kind: 'night', number: 1 });
+		expect(current.votes).toHaveLength(0);
+
+		// Night 1 → Day 2
+		const victim1 = findVillager(current.players);
+		manager.nightAction('mr1', { actor: godfather.did, kind: 'kill', target: victim1.did });
+		await manager.endNight('mr1');
+
+		current = mustLoadGame(db, 'mr1');
+		expect(current.phase).toEqual({ kind: 'day', number: 2 });
+		expect(current.nightActions).toHaveLength(0);
+
+		// Day 2: no majority → Night 2
+		await manager.endDay('mr1');
+		current = mustLoadGame(db, 'mr1');
+		expect(current.phase).toEqual({ kind: 'night', number: 2 });
+		expect(current.votes).toHaveLength(0);
+
+		// Verify multiple death posts recorded (one per night kill)
+		const kinds = getPostKinds(db, 'mr1');
+		expect(kinds.get('death')).toBe(2);
 	});
 });
