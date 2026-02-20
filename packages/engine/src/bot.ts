@@ -79,32 +79,11 @@ export interface MentionNotification {
 	indexedAt: string;
 }
 
-// DM support — using chat.bsky.convo lexicon
-// TODO: Implement when we have DM API access confirmed.
-// For now, stub the interface so engine can be built against it.
-
-export interface DmSender {
-	sendDm(recipientDid: string, text: string): Promise<void>;
-	createGroupDm(memberDids: string[], text: string): Promise<string>;
-	sendToGroupDm(convoId: string, text: string): Promise<void>;
-}
-
-/**
- * Placeholder DM sender that logs to console.
- * Replace with real implementation once chat.bsky.convo API usage is confirmed.
- */
-export function createConsoleDmSender(): DmSender {
-	return {
-		async sendDm(recipientDid, text) {
-			console.log(`[DM → ${recipientDid}] ${text}`);
-		},
-		async createGroupDm(memberDids, text) {
-			const id = `group-${Date.now()}`;
-			console.log(`[GROUP DM ${id} → ${memberDids.join(', ')}] ${text}`);
-			return id;
-		},
-		async sendToGroupDm(convoId, text) {
-			console.log(`[GROUP DM ${convoId}] ${text}`);
-		},
-	};
-}
+// DM support moved to dm.ts — re-export for convenience
+export type { DmSender, InboundDm } from './dm.js';
+export {
+	createBlueskyDmSender,
+	createConsoleDmSender,
+	createChatAgent,
+	pollInboundDms,
+} from './dm.js';

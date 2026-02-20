@@ -2,13 +2,23 @@
  * Skeetwolf engine entry point.
  * Connects to Bluesky, hydrates game state, starts polling loop.
  */
-import { createAgent, createConsoleDmSender, pollMentions } from './bot.js';
+import { createAgent, pollMentions } from './bot.js';
+import { parseDm, parseMention } from './command-parser.js';
 import { openDatabase } from './db.js';
+import {
+	createBlueskyDmSender,
+	createChatAgent,
+	createConsoleDmSender,
+	pollInboundDms,
+} from './dm.js';
 import { GameManager } from './game-manager.js';
+
+const BOT_HANDLE = 'skeetwolf.bsky.social'; // TODO: resolve from agent session
 
 async function main() {
 	const identifier = process.env.BSKY_IDENTIFIER;
 	const password = process.env.BSKY_PASSWORD;
+	const useLiveDms = process.env.LIVE_DMS === '1';
 
 	if (!identifier || !password) {
 		console.error('Set BSKY_IDENTIFIER and BSKY_PASSWORD environment variables');
@@ -17,68 +27,123 @@ async function main() {
 
 	const db = openDatabase('skeetwolf.db');
 	const agent = await createAgent({ identifier, password });
-	const dm = createConsoleDmSender(); // TODO: replace with real DM sender
+
+	const dm = useLiveDms ? createBlueskyDmSender(createChatAgent(agent)) : createConsoleDmSender();
+	const chatAgent = useLiveDms ? createChatAgent(agent) : null;
 
 	const manager = new GameManager(db, agent, dm);
 	manager.hydrate();
 
-	console.log('Skeetwolf engine started. Polling for mentions...');
+	console.log(
+		`Skeetwolf engine started. DMs: ${useLiveDms ? 'LIVE' : 'console'}. Polling for mentions...`,
+	);
 
-	// Main poll loop
-	let cursor: string | undefined;
-	const POLL_INTERVAL_MS = 30_000; // 30 seconds
+	let mentionCursor: string | undefined;
+	let dmMessageId: string | undefined;
+	const POLL_INTERVAL_MS = 30_000;
 
 	async function poll() {
 		try {
-			const { notifications, cursor: newCursor } = await pollMentions(agent, cursor);
-			cursor = newCursor;
+			const { notifications, cursor: newCursor } = await pollMentions(agent, mentionCursor);
+			mentionCursor = newCursor;
 
 			for (const mention of notifications) {
 				await handleMention(manager, mention.authorDid, mention.authorHandle, mention.text);
 			}
+
+			if (chatAgent) {
+				const { messages, latestMessageId } = await pollInboundDms(chatAgent, dmMessageId);
+				dmMessageId = latestMessageId;
+
+				for (const msg of messages) {
+					await handleDm(manager, msg.senderDid, msg.text);
+				}
+			}
+
+			await manager.tick(Date.now());
 		} catch (err) {
 			console.error('Poll error:', err);
 		}
 	}
 
-	// Initial poll + interval
 	await poll();
 	setInterval(poll, POLL_INTERVAL_MS);
 }
 
-/**
- * Parse and route mention commands.
- * Recognized commands:
- *   "new game" — create a new game
- *   "join #<id>" — sign up for a game
- *   "vote @<handle>" — cast a vote
- *   "unvote" — retract vote
- */
 async function handleMention(
 	manager: GameManager,
 	authorDid: string,
 	authorHandle: string,
 	text: string,
 ): Promise<void> {
-	const lower = text.toLowerCase();
+	const cmd = parseMention(text, BOT_HANDLE);
 
-	if (lower.includes('new game')) {
-		const id = Date.now().toString(36); // simple unique-enough ID
-		const game = await manager.newGame(id);
-		console.log(`New game created: ${game.id}`);
-		return;
+	switch (cmd.kind) {
+		case 'new_game': {
+			const id = Date.now().toString(36);
+			const game = await manager.newGame(id);
+			console.log(`New game created: ${game.id}`);
+			break;
+		}
+		case 'join': {
+			const error = manager.signup(cmd.gameId, authorDid, authorHandle);
+			if (error) console.log(`Signup failed for ${authorHandle}: ${error}`);
+			else console.log(`${authorHandle} joined game ${cmd.gameId}`);
+			break;
+		}
+		case 'start': {
+			const error = await manager.startGame(cmd.gameId);
+			if (error) console.log(`Start failed for game ${cmd.gameId}: ${error}`);
+			else console.log(`Game ${cmd.gameId} started`);
+			break;
+		}
+		case 'vote': {
+			if (!cmd.gameId) {
+				console.log(`Vote from ${authorHandle} missing game ID`);
+				break;
+			}
+			// Resolve handle to DID — for now, use the voter's own info
+			// TODO: resolve target handle to DID via API
+			const error = manager.vote(cmd.gameId, authorDid, cmd.targetHandle);
+			if (error) console.log(`Vote failed: ${error}`);
+			else console.log(`${authorHandle} voted for ${cmd.targetHandle} in game ${cmd.gameId}`);
+			break;
+		}
+		case 'unvote': {
+			if (!cmd.gameId) {
+				console.log(`Unvote from ${authorHandle} missing game ID`);
+				break;
+			}
+			const error = manager.vote(cmd.gameId, authorDid, null);
+			if (error) console.log(`Unvote failed: ${error}`);
+			else console.log(`${authorHandle} unvoted in game ${cmd.gameId}`);
+			break;
+		}
+		case 'unknown':
+			console.log(`Unrecognized mention from ${authorHandle}: ${cmd.text}`);
+			break;
 	}
+}
 
-	const joinMatch = lower.match(/join\s+#?(\w+)/);
-	if (joinMatch?.[1]) {
-		const error = manager.signup(joinMatch[1], authorDid, authorHandle);
-		if (error) console.log(`Signup failed for ${authorHandle}: ${error}`);
-		else console.log(`${authorHandle} joined game ${joinMatch[1]}`);
-		return;
+async function handleDm(_manager: GameManager, senderDid: string, text: string): Promise<void> {
+	const cmd = parseDm(text);
+
+	switch (cmd.kind) {
+		case 'kill':
+		case 'investigate':
+		case 'protect':
+			// TODO: find which game this player is in, resolve target handle → DID,
+			// then call manager.nightAction()
+			console.log(`Night action from ${senderDid}: ${cmd.kind} ${cmd.targetHandle}`);
+			break;
+		case 'mafia_chat':
+			// TODO: find player's mafia relay group, forward message
+			console.log(`Mafia chat from ${senderDid}: ${cmd.text}`);
+			break;
+		case 'unknown':
+			console.log(`Unknown DM from ${senderDid}: ${cmd.text}`);
+			break;
 	}
-
-	// TODO: vote parsing, start game command, etc.
-	console.log(`Unrecognized mention from ${authorHandle}: ${text}`);
 }
 
 main().catch((err) => {

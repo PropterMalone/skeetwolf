@@ -15,6 +15,7 @@ import {
 	castVote,
 	createGame,
 	eliminatePlayer,
+	isPhaseExpired,
 	resolveNight,
 	submitNightAction,
 	tallyVotes,
@@ -104,12 +105,17 @@ export class GameManager {
 			await this.dm.sendDm(player.did, message);
 		}
 
-		// Create mafia group DM
+		// Set up mafia relay group (bot-relayed 1:1 DMs since Bluesky lacks group DMs)
 		const mafiaPlayers = game.players.filter((p) => alignmentOf(p.role) === 'mafia');
 		if (mafiaPlayers.length > 1) {
-			await this.dm.createGroupDm(
+			const relayId = `mafia-${gameId}`;
+			this.dm.createRelayGroup(
+				relayId,
 				mafiaPlayers.map((p) => p.did),
-				`Mafia chat for Game #${gameId}. Coordinate your night kill here.`,
+			);
+			await this.dm.sendToRelayGroup(
+				relayId,
+				`Mafia chat for Game #${gameId}. DM me to coordinate — I'll relay to your teammates.`,
 			);
 		}
 
@@ -232,12 +238,28 @@ export class GameManager {
 		this.persist(state);
 	}
 
-	/** Check if any game phases need transitioning based on timers */
-	getGamesNeedingTransition(_now: number): { gameId: GameId; kind: 'day' | 'night' }[] {
-		const result: { gameId: GameId; kind: 'day' | 'night' }[] = [];
-		// TODO: track phase start times to compare against durations
-		// For now, phase transitions are triggered manually or by the scheduler
+	/** Check which active games have expired phases that need transitioning */
+	getGamesNeedingTransition(now: number): { gameId: GameId; phaseKind: 'day' | 'night' }[] {
+		const result: { gameId: GameId; phaseKind: 'day' | 'night' }[] = [];
+		for (const [id, state] of this.games) {
+			if (state.status === 'active' && isPhaseExpired(state, now)) {
+				result.push({ gameId: id, phaseKind: state.phase.kind });
+			}
+		}
 		return result;
+	}
+
+	/** Run scheduled phase transitions for all expired games */
+	async tick(now: number): Promise<void> {
+		const expired = this.getGamesNeedingTransition(now);
+		for (const { gameId, phaseKind } of expired) {
+			console.log(`Phase expired for game ${gameId} (${phaseKind})`);
+			if (phaseKind === 'day') {
+				await this.endDay(gameId);
+			} else {
+				await this.endNight(gameId);
+			}
+		}
 	}
 
 	private async announceWinner(state: GameState): Promise<void> {
