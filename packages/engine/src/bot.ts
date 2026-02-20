@@ -79,6 +79,16 @@ export interface MentionNotification {
 	indexedAt: string;
 }
 
+/** Resolve a Bluesky handle to a DID. Returns null if not found. */
+export async function resolveHandle(agent: AtpAgent, handle: string): Promise<string | null> {
+	try {
+		const response = await agent.resolveHandle({ handle });
+		return response.data.did;
+	} catch {
+		return null;
+	}
+}
+
 // DM support moved to dm.ts — re-export for convenience
 export type { DmSender, InboundDm } from './dm.js';
 export {
