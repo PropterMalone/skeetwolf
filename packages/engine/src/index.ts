@@ -53,7 +53,14 @@ async function main() {
 			mentionCursor = newCursor;
 
 			for (const mention of notifications) {
-				await handleMention(manager, agent, mention.authorDid, mention.authorHandle, mention.text);
+				await handleMention(
+					manager,
+					agent,
+					mention.uri,
+					mention.authorDid,
+					mention.authorHandle,
+					mention.text,
+				);
 			}
 
 			if (chatAgent) {
@@ -78,6 +85,7 @@ async function main() {
 async function handleMention(
 	manager: GameManager,
 	agent: import('@atproto/api').AtpAgent,
+	postUri: string,
 	authorDid: string,
 	authorHandle: string,
 	text: string,
@@ -108,7 +116,6 @@ async function handleMention(
 				console.log(`Vote from ${authorHandle} missing game ID`);
 				break;
 			}
-			// Try local resolution first, fall back to API
 			let targetDid = manager.resolveHandleInGame(cmd.gameId, cmd.targetHandle);
 			if (!targetDid) {
 				targetDid = await resolveHandle(agent, cmd.targetHandle);
@@ -119,7 +126,10 @@ async function handleMention(
 			}
 			const error = manager.vote(cmd.gameId, authorDid, targetDid);
 			if (error) console.log(`Vote failed: ${error}`);
-			else console.log(`${authorHandle} voted for @${cmd.targetHandle} in game ${cmd.gameId}`);
+			else {
+				console.log(`${authorHandle} voted for @${cmd.targetHandle} in game ${cmd.gameId}`);
+				manager.recordPlayerPost(cmd.gameId, postUri, authorDid);
+			}
 			break;
 		}
 		case 'unvote': {

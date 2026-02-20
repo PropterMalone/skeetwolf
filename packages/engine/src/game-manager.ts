@@ -24,7 +24,7 @@ import {
 } from '@skeetwolf/shared';
 import type Database from 'better-sqlite3';
 import { type DmSender, postMessage } from './bot.js';
-import { loadActiveGames, saveGame } from './db.js';
+import { type PostKind, loadActiveGames, recordGamePost, saveGame } from './db.js';
 
 export class GameManager {
 	private games = new Map<GameId, GameState>();
@@ -51,9 +51,10 @@ export class GameManager {
 		const state = createGame(id);
 		this.persist(state);
 
-		const uri = await postMessage(
-			this.agent,
+		const uri = await this.post(
+			id,
 			`🐺 Skeetwolf Game #${id} — signup is open!\n\nReply to join. Game starts when we have ${state.config.minPlayers}+ players.`,
+			'announcement',
 		);
 		const withUri: GameState = { ...state, announcementUri: uri };
 		this.persist(withUri);
@@ -124,9 +125,10 @@ export class GameManager {
 			);
 		}
 
-		await postMessage(
-			this.agent,
+		await this.post(
+			gameId,
 			`Game #${gameId} has begun! ${game.players.length} players. Night 0 — roles have been sent via DM. Night ends in ${game.config.nightDurationMs / 3600000}h.`,
+			'phase',
 		);
 
 		return null;
@@ -178,14 +180,16 @@ export class GameManager {
 
 			const role = eliminated?.role;
 			const alignment = role ? alignmentOf(role) : 'unknown';
-			await postMessage(
-				this.agent,
+			await this.post(
+				gameId,
 				`Day ${state.phase.number} results — votes: ${countStr}\n\n@${eliminated?.handle} has been eliminated. They were ${(role ?? 'unknown').toUpperCase()} (${alignment}).`,
+				'death',
 			);
 		} else {
-			await postMessage(
-				this.agent,
+			await this.post(
+				gameId,
 				`Day ${state.phase.number} results — no majority reached. Votes: ${countStr}\n\nNo one is eliminated.`,
+				'vote_result',
 			);
 		}
 
@@ -193,9 +197,10 @@ export class GameManager {
 			await this.announceWinner(state);
 		} else {
 			state = advancePhase(state);
-			await postMessage(
-				this.agent,
+			await this.post(
+				gameId,
 				`Night ${state.phase.number} begins. Power roles: send your actions via DM. Night ends in ${state.config.nightDurationMs / 3600000}h.`,
+				'phase',
 			);
 		}
 
@@ -222,21 +227,23 @@ export class GameManager {
 		if (resolution.killed) {
 			const victim = state.players.find((p) => p.did === resolution.killed);
 			state = applyWinCondition(state);
-			await postMessage(
-				this.agent,
+			await this.post(
+				gameId,
 				`Dawn breaks. @${victim?.handle} was found dead. They were ${victim?.role.toUpperCase()} (${victim ? alignmentOf(victim.role) : 'unknown'}).`,
+				'death',
 			);
 		} else {
-			await postMessage(this.agent, 'Dawn breaks. No one died in the night.');
+			await this.post(gameId, 'Dawn breaks. No one died in the night.', 'phase');
 		}
 
 		if (state.winner) {
 			await this.announceWinner(state);
 		} else {
 			state = advancePhase(state);
-			await postMessage(
-				this.agent,
+			await this.post(
+				gameId,
 				`Day ${state.phase.number} begins. Discuss and vote! Day ends in ${state.config.dayDurationMs / 3600000}h.`,
+				'phase',
 			);
 		}
 
@@ -325,10 +332,28 @@ export class GameManager {
 			.filter((p) => alignmentOf(p.role) === state.winner)
 			.map((p) => `@${p.handle}`)
 			.join(', ');
-		await postMessage(
-			this.agent,
+		await this.post(
+			state.id,
 			`🏆 Game #${state.id} is over! ${state.winner?.toUpperCase()} wins!\n\nWinners: ${winners}\n\nRoles: ${state.players.map((p) => `@${p.handle} (${p.role})`).join(', ')}`,
+			'game_over',
 		);
+	}
+
+	/** Post a message and record it in game_posts for the feed generator */
+	private async post(gameId: GameId, text: string, kind: PostKind): Promise<string> {
+		const uri = await postMessage(this.agent, text);
+		const botDid = this.agent.session?.did ?? 'unknown';
+		const state = this.games.get(gameId);
+		const phase = state ? `${state.phase.kind}-${state.phase.number}` : null;
+		recordGamePost(this.db, { uri, gameId, authorDid: botDid, kind, phase });
+		return uri;
+	}
+
+	/** Record a player's post (mention/reply) as part of a game */
+	recordPlayerPost(gameId: GameId, uri: string, authorDid: string): void {
+		const state = this.games.get(gameId);
+		const phase = state ? `${state.phase.kind}-${state.phase.number}` : null;
+		recordGamePost(this.db, { uri, gameId, authorDid, kind: 'player', phase });
 	}
 
 	private persist(state: GameState): void {

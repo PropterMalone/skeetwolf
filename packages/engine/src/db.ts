@@ -18,6 +18,16 @@ CREATE TABLE IF NOT EXISTS bot_state (
   key TEXT PRIMARY KEY,
   value TEXT NOT NULL
 );
+
+CREATE TABLE IF NOT EXISTS game_posts (
+  uri TEXT PRIMARY KEY,
+  game_id TEXT NOT NULL,
+  author_did TEXT NOT NULL,
+  kind TEXT NOT NULL,
+  phase TEXT,
+  indexed_at INTEGER NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_game_posts_game_id ON game_posts(game_id, indexed_at);
 `;
 
 export function openDatabase(path: string): Database.Database {
@@ -51,6 +61,62 @@ export function loadActiveGames(db: Database.Database): GameState[] {
 		.prepare("SELECT state FROM games WHERE json_extract(state, '$.status') != 'finished'")
 		.all() as { state: string }[];
 	return rows.map((r) => JSON.parse(r.state) as GameState);
+}
+
+/** Post kinds for the game_posts table */
+export type PostKind = 'announcement' | 'phase' | 'vote_result' | 'death' | 'game_over' | 'player';
+
+export interface GamePost {
+	uri: string;
+	gameId: string;
+	authorDid: string;
+	kind: PostKind;
+	phase: string | null;
+	indexedAt: number;
+}
+
+export function recordGamePost(db: Database.Database, post: Omit<GamePost, 'indexedAt'>): void {
+	db.prepare(
+		'INSERT OR IGNORE INTO game_posts (uri, game_id, author_did, kind, phase, indexed_at) VALUES (?, ?, ?, ?, ?, ?)',
+	).run(post.uri, post.gameId, post.authorDid, post.kind, post.phase, Date.now());
+}
+
+export function getGamePosts(
+	db: Database.Database,
+	gameId: string,
+	limit = 50,
+	cursor?: number,
+): GamePost[] {
+	const query = cursor
+		? 'SELECT * FROM game_posts WHERE game_id = ? AND indexed_at < ? ORDER BY indexed_at DESC LIMIT ?'
+		: 'SELECT * FROM game_posts WHERE game_id = ? ORDER BY indexed_at DESC LIMIT ?';
+
+	const params = cursor ? [gameId, cursor, limit] : [gameId, limit];
+	const rows = db.prepare(query).all(...params) as {
+		uri: string;
+		game_id: string;
+		author_did: string;
+		kind: PostKind;
+		phase: string | null;
+		indexed_at: number;
+	}[];
+
+	return rows.map((r) => ({
+		uri: r.uri,
+		gameId: r.game_id,
+		authorDid: r.author_did,
+		kind: r.kind,
+		phase: r.phase,
+		indexedAt: r.indexed_at,
+	}));
+}
+
+/** Get all active game IDs (for feed discovery) */
+export function getActiveGameIds(db: Database.Database): string[] {
+	const rows = db
+		.prepare("SELECT id FROM games WHERE json_extract(state, '$.status') != 'finished'")
+		.all() as { id: string }[];
+	return rows.map((r) => r.id);
 }
 
 export function saveBotState(db: Database.Database, key: string, value: string): void {
