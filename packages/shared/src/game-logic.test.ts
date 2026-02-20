@@ -1,0 +1,279 @@
+import { describe, expect, it } from 'vitest';
+import {
+	addPlayer,
+	advancePhase,
+	assignRoles,
+	castVote,
+	checkWinCondition,
+	createGame,
+	eliminatePlayer,
+	resolveNight,
+	submitNightAction,
+	tallyVotes,
+} from './game-logic.js';
+import { type GameState, alignmentOf } from './types.js';
+
+function gameWithPlayers(count: number): GameState {
+	let state = createGame('test-1');
+	for (let i = 0; i < count; i++) {
+		const result = addPlayer(state, `did:plc:player${i}`, `player${i}.bsky.social`);
+		state = result.state;
+	}
+	return state;
+}
+
+/** Deterministic "shuffle" that returns the array as-is */
+function noShuffle<T>(arr: T[]): T[] {
+	return [...arr];
+}
+
+describe('createGame', () => {
+	it('creates a game in signup phase', () => {
+		const game = createGame('abc');
+		expect(game.id).toBe('abc');
+		expect(game.status).toBe('signup');
+		expect(game.players).toHaveLength(0);
+		expect(game.phase).toEqual({ kind: 'night', number: 0 });
+	});
+});
+
+describe('addPlayer', () => {
+	it('adds a player during signup', () => {
+		const game = createGame('test');
+		const result = addPlayer(game, 'did:plc:alice', 'alice.bsky.social');
+		expect(result.ok).toBe(true);
+		expect(result.state.players).toHaveLength(1);
+		expect(result.state.players[0]?.handle).toBe('alice.bsky.social');
+	});
+
+	it('rejects duplicate signups', () => {
+		const game = createGame('test');
+		const r1 = addPlayer(game, 'did:plc:alice', 'alice.bsky.social');
+		const r2 = addPlayer(r1.state, 'did:plc:alice', 'alice.bsky.social');
+		expect(r2.ok).toBe(false);
+		expect(r2.error).toBe('already signed up');
+	});
+
+	it('rejects signups when game is full', () => {
+		let state = createGame('test', { maxPlayers: 2 });
+		state = addPlayer(state, 'did:plc:a', 'a').state;
+		state = addPlayer(state, 'did:plc:b', 'b').state;
+		const result = addPlayer(state, 'did:plc:c', 'c');
+		expect(result.ok).toBe(false);
+		expect(result.error).toBe('game is full');
+	});
+});
+
+describe('assignRoles', () => {
+	it('assigns roles and transitions to active', () => {
+		const state = gameWithPlayers(6);
+		const result = assignRoles(state, noShuffle);
+		expect(result.ok).toBe(true);
+		expect(result.state.status).toBe('active');
+
+		const roles = result.state.players.map((p) => p.role);
+		// 6 players with noShuffle: godfather, mafioso, cop, villager, villager, villager
+		// (doctor requires 7+ players)
+		expect(roles).toEqual(['godfather', 'mafioso', 'cop', 'villager', 'villager', 'villager']);
+	});
+
+	it('rejects with too few players', () => {
+		const state = gameWithPlayers(3);
+		const result = assignRoles(state);
+		expect(result.ok).toBe(false);
+		expect(result.error).toContain('at least');
+	});
+
+	it('assigns 1 mafia for 5 players', () => {
+		const state = gameWithPlayers(5);
+		const result = assignRoles(state, noShuffle);
+		const mafiaCount = result.state.players.filter((p) => alignmentOf(p.role) === 'mafia').length;
+		expect(mafiaCount).toBe(1);
+	});
+});
+
+describe('voting', () => {
+	function dayGameWith6(): GameState {
+		const state = gameWithPlayers(6);
+		const result = assignRoles(state, noShuffle);
+		return advancePhase(result.state); // Night 0 → Day 1
+	}
+
+	it('allows alive players to vote', () => {
+		const state = dayGameWith6();
+		const result = castVote(state, 'did:plc:player0', 'did:plc:player1');
+		expect(result.ok).toBe(true);
+		expect(result.state.votes).toHaveLength(1);
+	});
+
+	it('rejects votes during night', () => {
+		const state = gameWithPlayers(6);
+		const active = assignRoles(state, noShuffle).state; // still Night 0
+		const result = castVote(active, 'did:plc:player0', 'did:plc:player1');
+		expect(result.ok).toBe(false);
+	});
+
+	it('replaces existing vote from same voter', () => {
+		let state = dayGameWith6();
+		state = castVote(state, 'did:plc:player0', 'did:plc:player1').state;
+		state = castVote(state, 'did:plc:player0', 'did:plc:player2').state;
+		expect(state.votes).toHaveLength(1);
+		expect(state.votes[0]?.target).toBe('did:plc:player2');
+	});
+
+	it('tallies majority correctly', () => {
+		let state = dayGameWith6();
+		// 6 alive, majority = 4
+		state = castVote(state, 'did:plc:player0', 'did:plc:player5').state;
+		state = castVote(state, 'did:plc:player1', 'did:plc:player5').state;
+		state = castVote(state, 'did:plc:player2', 'did:plc:player5').state;
+
+		let tally = tallyVotes(state);
+		expect(tally.target).toBeNull(); // only 3 votes, need 4
+
+		state = castVote(state, 'did:plc:player3', 'did:plc:player5').state;
+		tally = tallyVotes(state);
+		expect(tally.target).toBe('did:plc:player5');
+	});
+});
+
+describe('night actions', () => {
+	function nightGame(): GameState {
+		const state = gameWithPlayers(7);
+		return assignRoles(state, noShuffle).state; // Night 0, active
+		// Roles: godfather, mafioso, cop, doctor, villager, villager, villager
+	}
+
+	it('allows mafia to submit kill', () => {
+		const state = nightGame();
+		const result = submitNightAction(state, {
+			actor: 'did:plc:player0', // godfather
+			kind: 'kill',
+			target: 'did:plc:player4',
+		});
+		expect(result.ok).toBe(true);
+	});
+
+	it('rejects cop trying to kill', () => {
+		const state = nightGame();
+		const result = submitNightAction(state, {
+			actor: 'did:plc:player2', // cop
+			kind: 'kill',
+			target: 'did:plc:player4',
+		});
+		expect(result.ok).toBe(false);
+		expect(result.error).toContain('cannot perform');
+	});
+
+	it('resolves kill when unprotected', () => {
+		let state = nightGame();
+		state = submitNightAction(state, {
+			actor: 'did:plc:player0',
+			kind: 'kill',
+			target: 'did:plc:player4',
+		}).state;
+
+		const resolution = resolveNight(state);
+		expect(resolution.killed).toBe('did:plc:player4');
+		expect(resolution.state.players.find((p) => p.did === 'did:plc:player4')?.alive).toBe(false);
+	});
+
+	it('doctor blocks the kill', () => {
+		let state = nightGame();
+		state = submitNightAction(state, {
+			actor: 'did:plc:player0',
+			kind: 'kill',
+			target: 'did:plc:player4',
+		}).state;
+		state = submitNightAction(state, {
+			actor: 'did:plc:player3', // doctor
+			kind: 'protect',
+			target: 'did:plc:player4',
+		}).state;
+
+		const resolution = resolveNight(state);
+		expect(resolution.killed).toBeNull();
+		expect(resolution.state.players.find((p) => p.did === 'did:plc:player4')?.alive).toBe(true);
+	});
+
+	it('godfather appears town to cop', () => {
+		let state = nightGame();
+		state = submitNightAction(state, {
+			actor: 'did:plc:player2', // cop
+			kind: 'investigate',
+			target: 'did:plc:player0', // godfather
+		}).state;
+
+		const resolution = resolveNight(state);
+		expect(resolution.investigated?.result).toBe('town');
+	});
+
+	it('mafioso appears mafia to cop', () => {
+		let state = nightGame();
+		state = submitNightAction(state, {
+			actor: 'did:plc:player2', // cop
+			kind: 'investigate',
+			target: 'did:plc:player1', // mafioso
+		}).state;
+
+		const resolution = resolveNight(state);
+		expect(resolution.investigated?.result).toBe('mafia');
+	});
+});
+
+describe('win conditions', () => {
+	it('town wins when all mafia dead', () => {
+		const state = gameWithPlayers(5);
+		const game = assignRoles(state, noShuffle).state;
+		// Kill the godfather (player0)
+		const afterKill = eliminatePlayer(game, 'did:plc:player0');
+		expect(checkWinCondition(afterKill)).toBe('town');
+	});
+
+	it('mafia wins when they equal town', () => {
+		const state = gameWithPlayers(5);
+		const game = assignRoles(state, noShuffle).state;
+		// 5 players with noShuffle: godfather, cop, doctor, villager, villager
+		// Kill 3 townies → 1 mafia, 1 town → mafia wins
+		let g = eliminatePlayer(game, 'did:plc:player1');
+		g = eliminatePlayer(g, 'did:plc:player2');
+		g = eliminatePlayer(g, 'did:plc:player3');
+		expect(checkWinCondition(g)).toBe('mafia');
+	});
+
+	it('returns null when game is still going', () => {
+		const state = gameWithPlayers(7);
+		const game = assignRoles(state, noShuffle).state;
+		expect(checkWinCondition(game)).toBeNull();
+	});
+});
+
+describe('phase transitions', () => {
+	it('advances night → day', () => {
+		const state = createGame('test');
+		const advanced = advancePhase(state); // Night 0 → Day 1
+		expect(advanced.phase).toEqual({ kind: 'day', number: 1 });
+	});
+
+	it('advances day → night', () => {
+		const state = createGame('test');
+		const day = advancePhase(state); // Night 0 → Day 1
+		const night = advancePhase(day); // Day 1 → Night 1
+		expect(night.phase).toEqual({ kind: 'night', number: 1 });
+	});
+
+	it('clears votes and actions on phase change', () => {
+		let state = gameWithPlayers(6);
+		state = assignRoles(state, noShuffle).state;
+		state = submitNightAction(state, {
+			actor: 'did:plc:player0',
+			kind: 'kill',
+			target: 'did:plc:player4',
+		}).state;
+		expect(state.nightActions).toHaveLength(1);
+
+		const advanced = advancePhase(state);
+		expect(advanced.nightActions).toHaveLength(0);
+		expect(advanced.votes).toHaveLength(0);
+	});
+});
