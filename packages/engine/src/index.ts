@@ -2,7 +2,7 @@
  * Skeetwolf engine entry point.
  * Connects to Bluesky, hydrates game state, starts polling loop.
  */
-import { createAgent, pollMentions } from './bot.js';
+import { createAgent, pollMentions, resolveHandle } from './bot.js';
 import { parseDm, parseMention } from './command-parser.js';
 import { openDatabase } from './db.js';
 import {
@@ -13,7 +13,7 @@ import {
 } from './dm.js';
 import { GameManager } from './game-manager.js';
 
-const BOT_HANDLE = 'skeetwolf.bsky.social'; // TODO: resolve from agent session
+let BOT_HANDLE = 'skeetwolf.bsky.social';
 
 async function main() {
 	const identifier = process.env.BSKY_IDENTIFIER;
@@ -28,6 +28,11 @@ async function main() {
 	const db = openDatabase('skeetwolf.db');
 	const agent = await createAgent({ identifier, password });
 
+	// Resolve actual bot handle from session
+	if (agent.session?.handle) {
+		BOT_HANDLE = agent.session.handle;
+	}
+
 	const dm = useLiveDms ? createBlueskyDmSender(createChatAgent(agent)) : createConsoleDmSender();
 	const chatAgent = useLiveDms ? createChatAgent(agent) : null;
 
@@ -35,7 +40,7 @@ async function main() {
 	manager.hydrate();
 
 	console.log(
-		`Skeetwolf engine started. DMs: ${useLiveDms ? 'LIVE' : 'console'}. Polling for mentions...`,
+		`Skeetwolf engine started as @${BOT_HANDLE}. DMs: ${useLiveDms ? 'LIVE' : 'console'}. Polling...`,
 	);
 
 	let mentionCursor: string | undefined;
@@ -48,7 +53,7 @@ async function main() {
 			mentionCursor = newCursor;
 
 			for (const mention of notifications) {
-				await handleMention(manager, mention.authorDid, mention.authorHandle, mention.text);
+				await handleMention(manager, agent, mention.authorDid, mention.authorHandle, mention.text);
 			}
 
 			if (chatAgent) {
@@ -72,6 +77,7 @@ async function main() {
 
 async function handleMention(
 	manager: GameManager,
+	agent: import('@atproto/api').AtpAgent,
 	authorDid: string,
 	authorHandle: string,
 	text: string,
@@ -102,11 +108,18 @@ async function handleMention(
 				console.log(`Vote from ${authorHandle} missing game ID`);
 				break;
 			}
-			// Resolve handle to DID — for now, use the voter's own info
-			// TODO: resolve target handle to DID via API
-			const error = manager.vote(cmd.gameId, authorDid, cmd.targetHandle);
+			// Try local resolution first, fall back to API
+			let targetDid = manager.resolveHandleInGame(cmd.gameId, cmd.targetHandle);
+			if (!targetDid) {
+				targetDid = await resolveHandle(agent, cmd.targetHandle);
+			}
+			if (!targetDid) {
+				console.log(`Could not resolve handle: ${cmd.targetHandle}`);
+				break;
+			}
+			const error = manager.vote(cmd.gameId, authorDid, targetDid);
 			if (error) console.log(`Vote failed: ${error}`);
-			else console.log(`${authorHandle} voted for ${cmd.targetHandle} in game ${cmd.gameId}`);
+			else console.log(`${authorHandle} voted for @${cmd.targetHandle} in game ${cmd.gameId}`);
 			break;
 		}
 		case 'unvote': {
@@ -125,21 +138,28 @@ async function handleMention(
 	}
 }
 
-async function handleDm(_manager: GameManager, senderDid: string, text: string): Promise<void> {
+async function handleDm(manager: GameManager, senderDid: string, text: string): Promise<void> {
 	const cmd = parseDm(text);
 
 	switch (cmd.kind) {
 		case 'kill':
 		case 'investigate':
-		case 'protect':
-			// TODO: find which game this player is in, resolve target handle → DID,
-			// then call manager.nightAction()
-			console.log(`Night action from ${senderDid}: ${cmd.kind} ${cmd.targetHandle}`);
+		case 'protect': {
+			const game = manager.findGameForPlayer(senderDid);
+			if (!game) {
+				console.log(`Night action from ${senderDid} but not in any active game`);
+				break;
+			}
+			const error = manager.nightActionByHandle(game.id, senderDid, cmd.kind, cmd.targetHandle);
+			if (error) console.log(`Night action failed: ${error}`);
+			else console.log(`${senderDid}: ${cmd.kind} @${cmd.targetHandle} in game ${game.id}`);
 			break;
-		case 'mafia_chat':
-			// TODO: find player's mafia relay group, forward message
-			console.log(`Mafia chat from ${senderDid}: ${cmd.text}`);
+		}
+		case 'mafia_chat': {
+			const error = await manager.relayMafiaChat(senderDid, cmd.text);
+			if (error) console.log(`Mafia relay failed for ${senderDid}: ${error}`);
 			break;
+		}
 		case 'unknown':
 			console.log(`Unknown DM from ${senderDid}: ${cmd.text}`);
 			break;

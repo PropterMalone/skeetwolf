@@ -4,9 +4,11 @@
  */
 import type { AtpAgent } from '@atproto/api';
 import {
+	type Did,
 	type GameId,
 	type GameState,
 	type NightAction,
+	type NightActionKind,
 	addPlayer,
 	advancePhase,
 	alignmentOf,
@@ -26,6 +28,8 @@ import { loadActiveGames, saveGame } from './db.js';
 
 export class GameManager {
 	private games = new Map<GameId, GameState>();
+	/** Maps relay group ID → member DIDs (mirrors what DmSender tracks internally) */
+	private mafiaRelayIds = new Map<GameId, string>();
 
 	constructor(
 		private db: Database.Database,
@@ -109,6 +113,7 @@ export class GameManager {
 		const mafiaPlayers = game.players.filter((p) => alignmentOf(p.role) === 'mafia');
 		if (mafiaPlayers.length > 1) {
 			const relayId = `mafia-${gameId}`;
+			this.mafiaRelayIds.set(gameId, relayId);
 			this.dm.createRelayGroup(
 				relayId,
 				mafiaPlayers.map((p) => p.did),
@@ -236,6 +241,59 @@ export class GameManager {
 		}
 
 		this.persist(state);
+	}
+
+	/** Find the active game a player is in. Returns null if not in any game. */
+	findGameForPlayer(did: Did): GameState | null {
+		for (const state of this.games.values()) {
+			if (state.status !== 'active') continue;
+			if (state.players.some((p) => p.did === did && p.alive)) {
+				return state;
+			}
+		}
+		return null;
+	}
+
+	/** Resolve a handle to a DID using the game's player list (no API call needed) */
+	resolveHandleInGame(gameId: GameId, handle: string): Did | null {
+		const state = this.games.get(gameId);
+		if (!state) return null;
+		// Match handle with or without .bsky.social suffix
+		const normalized = handle.toLowerCase();
+		const player = state.players.find(
+			(p) =>
+				p.handle.toLowerCase() === normalized ||
+				p.handle.toLowerCase() === `${normalized}.bsky.social`,
+		);
+		return player?.did ?? null;
+	}
+
+	/** Submit a night action by handle (resolves handle → DID internally) */
+	nightActionByHandle(
+		gameId: GameId,
+		actorDid: Did,
+		kind: NightActionKind,
+		targetHandle: string,
+	): string | null {
+		const targetDid = this.resolveHandleInGame(gameId, targetHandle);
+		if (!targetDid) return `player "${targetHandle}" not found in this game`;
+		return this.nightAction(gameId, { actor: actorDid, kind, target: targetDid });
+	}
+
+	/** Forward a mafia chat message to the relay group for the player's game */
+	async relayMafiaChat(senderDid: Did, text: string): Promise<string | null> {
+		const game = this.findGameForPlayer(senderDid);
+		if (!game) return 'not in an active game';
+
+		const sender = game.players.find((p) => p.did === senderDid);
+		if (!sender || alignmentOf(sender.role) !== 'mafia') return 'not a mafia member';
+
+		const relayId = this.mafiaRelayIds.get(game.id);
+		if (!relayId) return 'no mafia relay group for this game';
+
+		const senderLabel = `@${sender.handle}`;
+		await this.dm.sendToRelayGroup(relayId, `${senderLabel}: ${text}`);
+		return null;
 	}
 
 	/** Check which active games have expired phases that need transitioning */
