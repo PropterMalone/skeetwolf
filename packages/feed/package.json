@@ -4,6 +4,10 @@
   "private": true,
   "type": "module",
   "main": "./dist/index.js",
+  "exports": {
+    ".": "./dist/index.js",
+    "./handler": "./dist/handler.js"
+  },
   "scripts": {
     "build": "tsc -b",
     "dev": "node --watch --loader ts-node/esm src/index.ts",

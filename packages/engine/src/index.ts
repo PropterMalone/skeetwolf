@@ -20,16 +20,16 @@ const POLL_INTERVAL_MS = 30_000;
 const MAX_BACKOFF_MS = 5 * 60 * 1000;
 
 async function main() {
-	const identifier = process.env.BSKY_IDENTIFIER;
-	const password = process.env.BSKY_PASSWORD;
-	const useLiveDms = process.env.LIVE_DMS === '1';
+	const identifier = process.env['BSKY_IDENTIFIER'];
+	const password = process.env['BSKY_PASSWORD'];
+	const useLiveDms = process.env['LIVE_DMS'] === '1';
 
 	if (!identifier || !password) {
 		console.error('Set BSKY_IDENTIFIER and BSKY_PASSWORD environment variables');
 		process.exit(1);
 	}
 
-	const db = openDatabase(process.env.DB_PATH || 'skeetwolf.db');
+	const db = openDatabase(process.env['DB_PATH'] || 'skeetwolf.db');
 	const agent = await createAgent({ identifier, password });
 
 	if (agent.session?.handle) {
@@ -91,7 +91,7 @@ async function main() {
 			if (isAuthError(err)) {
 				console.log('Auth error detected, refreshing session...');
 				try {
-					await agent.login({ identifier, password });
+					await agent.login({ identifier: identifier!, password: password! });
 					console.log('Session refreshed');
 				} catch (loginErr) {
 					console.error('Session refresh failed:', loginErr);

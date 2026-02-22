@@ -8,7 +8,7 @@ import { existsSync, unlinkSync } from 'node:fs';
 import type { GameState, Player, Role } from '@skeetwolf/shared';
 import { alignmentOf } from '@skeetwolf/shared';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { type FeedHandler, createFeedHandler } from '../../feed/src/handler.js';
+import { type FeedHandler, createFeedHandler } from '@skeetwolf/feed/handler';
 import { loadGame, openDatabase } from './db.js';
 import { GameManager } from './game-manager.js';
 

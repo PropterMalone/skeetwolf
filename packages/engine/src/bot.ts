@@ -28,7 +28,7 @@ export async function postMessage(
 ): Promise<{ uri: string; cid: string }> {
 	const record: Record<string, unknown> = { text };
 	if (labels?.length) {
-		record.labels = {
+		record['labels'] = {
 			$type: 'com.atproto.label.defs#selfLabels',
 			values: labels.map((val) => ({ val })),
 		};
@@ -54,7 +54,7 @@ export async function replyToPost(
 		},
 	};
 	if (labels?.length) {
-		record.labels = {
+		record['labels'] = {
 			$type: 'com.atproto.label.defs#selfLabels',
 			values: labels.map((val) => ({ val })),
 		};
