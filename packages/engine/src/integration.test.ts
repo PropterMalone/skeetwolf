@@ -111,7 +111,7 @@ describe('engine → feed integration', () => {
 		await manager.endDay('test1');
 
 		// -- Now verify the feed --
-		feedHandler = createFeedHandler(TEST_DB);
+		feedHandler = createFeedHandler(TEST_DB, 'did:web:test.example');
 
 		const result = feedHandler(
 			new URLSearchParams({
@@ -160,7 +160,7 @@ describe('engine → feed integration', () => {
 		manager.recordPlayerPost('game-a', 'at://did:plc:a0/post/1', 'did:plc:a0');
 		manager.recordPlayerPost('game-b', 'at://did:plc:b0/post/1', 'did:plc:b0');
 
-		feedHandler = createFeedHandler(TEST_DB);
+		feedHandler = createFeedHandler(TEST_DB, 'did:web:test.example');
 
 		const feedA = feedHandler(
 			new URLSearchParams({
@@ -199,12 +199,16 @@ describe('engine → feed integration', () => {
 		}
 		await manager.startGame('pag1');
 
-		// Record several player posts to have enough for pagination
+		// Record several player posts with distinct timestamps for pagination
+		let fakeTime = 1000000;
+		const realDateNow = Date.now;
+		Date.now = () => ++fakeTime;
 		for (let i = 0; i < 10; i++) {
 			manager.recordPlayerPost('pag1', `at://did:plc:p0/post/p${i}`, 'did:plc:p0');
 		}
+		Date.now = realDateNow;
 
-		feedHandler = createFeedHandler(TEST_DB);
+		feedHandler = createFeedHandler(TEST_DB, 'did:web:test.example');
 
 		// Get first page
 		const page1 = feedHandler(

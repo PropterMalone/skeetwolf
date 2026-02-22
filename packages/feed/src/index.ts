@@ -15,8 +15,9 @@ import { createFeedHandler } from './handler.js';
 
 const PORT = Number(process.env.FEED_PORT) || 3001;
 const DB_PATH = process.env.DB_PATH || '../engine/skeetwolf.db';
+const PUBLISHER_DID = process.env.FEED_PUBLISHER_DID ?? 'did:web:skeetwolf.example';
 
-const handler = createFeedHandler(DB_PATH);
+const handler = createFeedHandler(DB_PATH, PUBLISHER_DID);
 
 const server = createServer(async (req, res) => {
 	const url = new URL(req.url ?? '/', `http://localhost:${PORT}`);
@@ -38,7 +39,7 @@ const server = createServer(async (req, res) => {
 		res.writeHead(200, { 'Content-Type': 'application/json' });
 		res.end(
 			JSON.stringify({
-				did: process.env.FEED_PUBLISHER_DID ?? 'did:web:skeetwolf.example',
+				did: PUBLISHER_DID,
 				feeds: handler.listFeeds(),
 			}),
 		);

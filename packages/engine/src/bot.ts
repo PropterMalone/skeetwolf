@@ -24,8 +24,16 @@ export async function createAgent(config: BotConfig): Promise<AtpAgent> {
 export async function postMessage(
 	agent: AtpAgent,
 	text: string,
+	labels?: string[],
 ): Promise<{ uri: string; cid: string }> {
-	const response = await agent.post({ text });
+	const record: Record<string, unknown> = { text };
+	if (labels?.length) {
+		record.labels = {
+			$type: 'com.atproto.label.defs#selfLabels',
+			values: labels.map((val) => ({ val })),
+		};
+	}
+	const response = await agent.post(record);
 	return { uri: response.uri, cid: response.cid };
 }
 
@@ -36,14 +44,22 @@ export async function replyToPost(
 	parentCid: string,
 	rootUri: string,
 	rootCid: string,
+	labels?: string[],
 ): Promise<{ uri: string; cid: string }> {
-	const response = await agent.post({
+	const record: Record<string, unknown> = {
 		text,
 		reply: {
 			parent: { uri: parentUri, cid: parentCid },
 			root: { uri: rootUri, cid: rootCid },
 		},
-	});
+	};
+	if (labels?.length) {
+		record.labels = {
+			$type: 'com.atproto.label.defs#selfLabels',
+			values: labels.map((val) => ({ val })),
+		};
+	}
+	const response = await agent.post(record);
 	return { uri: response.uri, cid: response.cid };
 }
 

@@ -34,17 +34,21 @@ packages/
 │       ├── db.ts             # SQLite persistence (serialized game state)
 │       ├── game-manager.ts   # Bridges game logic with I/O
 │       └── index.ts          # Entry point, polling loop
-└── feed/       # Feed generator stub (Cloudflare Worker, future)
-    └── src/
-        └── index.ts
+├── feed/       # Feed generator (Cloudflare Worker)
+│   └── src/
+│       ├── index.ts          # Worker entry point
+│       └── handler.ts        # Feed skeleton handler
+└── labeler/    # ATProto labeler for game post tagging (future)
 ```
 
 ### Key Design Decisions
 
 - **Game state is immutable** — all game-logic functions return new state, never mutate
 - **DB stores serialized GameState** — simple JSON blob per game, no normalized tables yet
-- **DMs stubbed** — `DmSender` interface with console logger; real implementation pending chat.bsky.convo API confirmation
-- **Phase timers not yet implemented** — transitions are manual/command-driven for now
+- **DMs live** — `DmSender` interface with real Bluesky chat.bsky.convo implementation + console fallback
+- **Phase timers** — tick-based expiry checks; GameManager.tick() transitions expired phases
+- **Reply threading** — bot replies thread under game announcement (root) with triggering mention as parent
+- **Cursor persistence** — mention and DM poll cursors saved to `bot_state` table, survive restarts
 - **No custom lexicon yet** — MVP uses mention-based commands; structured records later
 
 ## Commands
@@ -80,9 +84,10 @@ BSKY_PASSWORD=      # Bot's app password
 
 ## Future Work (roughly ordered)
 
-1. Real DM sender (chat.bsky.convo)
-2. Phase timer implementation
-3. Vote parsing from mentions
-4. Labeler for game posts
-5. Feed generator (Cloudflare Worker)
-6. Custom lexicon for structured game actions
+1. ~~Real DM sender (chat.bsky.convo)~~ — done
+2. ~~Phase timer implementation~~ — done
+3. ~~Vote parsing from mentions~~ — done
+4. ~~Reply threading + cursor persistence~~ — done
+5. Labeler for game posts — label bot posts by type (announcement, phase, death, etc.)
+6. Feed generator (Cloudflare Worker) — serve labeled game posts as a custom feed
+7. Custom lexicon for structured game actions

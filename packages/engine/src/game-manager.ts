@@ -26,6 +26,16 @@ import type Database from 'better-sqlite3';
 import { type DmSender, postMessage, replyToPost } from './bot.js';
 import { type PostKind, loadActiveGames, recordGamePost, saveGame } from './db.js';
 
+const POST_KIND_LABELS: Record<PostKind, string[]> = {
+	announcement: ['skeetwolf', 'game-announcement'],
+	phase: ['skeetwolf', 'game-phase'],
+	death: ['skeetwolf', 'game-death'],
+	vote_result: ['skeetwolf', 'game-vote'],
+	game_over: ['skeetwolf', 'game-over'],
+	reply: ['skeetwolf', 'game-reply'],
+	player: ['skeetwolf'],
+};
+
 export class GameManager {
 	private games = new Map<GameId, GameState>();
 	/** Maps relay group ID → member DIDs (mirrors what DmSender tracks internally) */
@@ -380,7 +390,7 @@ export class GameManager {
 		text: string,
 		kind: PostKind,
 	): Promise<{ uri: string; cid: string }> {
-		const { uri, cid } = await postMessage(this.agent, text);
+		const { uri, cid } = await postMessage(this.agent, text, POST_KIND_LABELS[kind]);
 		const botDid = this.agent.session?.did ?? 'unknown';
 		const state = this.games.get(gameId);
 		const phase = state ? `${state.phase.kind}-${state.phase.number}` : null;
@@ -396,7 +406,16 @@ export class GameManager {
 		const rootUri = state?.announcementUri ?? parentUri;
 		const rootCid = state?.announcementCid ?? parentCid;
 
-		const { uri } = await replyToPost(this.agent, text, parentUri, parentCid, rootUri, rootCid);
+		const replyLabels = POST_KIND_LABELS.reply;
+		const { uri } = await replyToPost(
+			this.agent,
+			text,
+			parentUri,
+			parentCid,
+			rootUri,
+			rootCid,
+			replyLabels,
+		);
 		const botDid = this.agent.session?.did ?? 'unknown';
 		const phase = state ? `${state.phase.kind}-${state.phase.number}` : null;
 		recordGamePost(this.db, { uri, gameId, authorDid: botDid, kind: 'reply', phase });

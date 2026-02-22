@@ -6,9 +6,11 @@
   "main": "./dist/index.js",
   "scripts": {
     "build": "tsc -b",
-    "dev": "node --watch --loader ts-node/esm src/index.ts"
+    "dev": "node --watch --loader ts-node/esm src/index.ts",
+    "register-feed": "npx tsx src/register.ts"
   },
   "dependencies": {
+    "@atproto/api": "^0.13.0",
     "better-sqlite3": "^11.0.0"
   },
   "devDependencies": {

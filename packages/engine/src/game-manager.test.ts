@@ -321,6 +321,41 @@ describe('GameManager.reply threading', () => {
 	});
 });
 
+describe('GameManager self-labels', () => {
+	beforeEach(() => {
+		postCounter = 0;
+	});
+
+	it('includes self-labels on announcement posts', async () => {
+		const dm = createMockDm();
+		const mockAgent = createMockAgent();
+		const manager = new GameManager(createMockDb(), mockAgent, dm.sender);
+		await manager.newGame('g1');
+
+		// First agent.post call is the announcement
+		const call = mockAgent.post.mock.calls[0]?.[0];
+		expect(call.labels).toEqual({
+			$type: 'com.atproto.label.defs#selfLabels',
+			values: [{ val: 'skeetwolf' }, { val: 'game-announcement' }],
+		});
+	});
+
+	it('includes self-labels on reply posts', async () => {
+		const dm = createMockDm();
+		const mockAgent = createMockAgent();
+		const manager = new GameManager(createMockDb(), mockAgent, dm.sender);
+		await manager.newGame('g1');
+
+		await manager.reply('g1', 'test', 'at://user/post/1', 'cid-1');
+
+		const lastCall = mockAgent.post.mock.calls.at(-1)?.[0];
+		expect(lastCall.labels).toEqual({
+			$type: 'com.atproto.label.defs#selfLabels',
+			values: [{ val: 'skeetwolf' }, { val: 'game-reply' }],
+		});
+	});
+});
+
 describe('GameManager.getGame', () => {
 	beforeEach(() => {
 		postCounter = 0;
