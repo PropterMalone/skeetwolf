@@ -8,7 +8,10 @@ function createMockAgent(): any {
 	return {
 		post: vi.fn().mockImplementation(() => {
 			postCounter++;
-			return Promise.resolve({ uri: `at://mock/post/${postCounter}` });
+			return Promise.resolve({
+				uri: `at://mock/post/${postCounter}`,
+				cid: `cid-mock-${postCounter}`,
+			});
 		}),
 		session: { did: 'did:plc:bot' },
 	};
@@ -262,6 +265,59 @@ describe('GameManager.voteAndCheckMajority', () => {
 		const result = await manager.voteAndCheckMajority('g1', 'did:plc:nobody', 'did:plc:p0');
 		expect(result.error).not.toBeNull();
 		expect(result.majorityReached).toBe(false);
+	});
+});
+
+describe('GameManager.reply threading', () => {
+	beforeEach(() => {
+		postCounter = 0;
+	});
+
+	it('uses announcement as root and mention as parent', async () => {
+		const dm = createMockDm();
+		const mockAgent = createMockAgent();
+		const manager = new GameManager(createMockDb(), mockAgent, dm.sender);
+		const game = await manager.newGame('g1');
+
+		// newGame posts the announcement (post #1), capture its uri/cid
+		expect(game.announcementUri).toBe('at://mock/post/1');
+		expect(game.announcementCid).toBe('cid-mock-1');
+
+		// Reply to a mention — should use announcement as root, mention as parent
+		await manager.reply('g1', 'test reply', 'at://user/mention/1', 'cid-mention-1');
+
+		// Last agent.post call is the reply (post #2)
+		const lastCall = mockAgent.post.mock.calls.at(-1)?.[0];
+		expect(lastCall.reply.root).toEqual({
+			uri: 'at://mock/post/1',
+			cid: 'cid-mock-1',
+		});
+		expect(lastCall.reply.parent).toEqual({
+			uri: 'at://user/mention/1',
+			cid: 'cid-mention-1',
+		});
+	});
+
+	it('falls back to parent as root when announcement data is missing', async () => {
+		const dm = createMockDm();
+		const mockAgent = createMockAgent();
+		const manager = new GameManager(createMockDb(), mockAgent, dm.sender);
+
+		// Create game but simulate missing announcement (e.g., old game without CID)
+		await manager.newGame('g1');
+		// Manually clear the announcement data by re-persisting without it
+		// Instead, just reply to a game that doesn't exist — falls back to parent-as-root
+		await manager.reply('nonexistent', 'test', 'at://user/post/1', 'cid-user-1');
+
+		const lastCall = mockAgent.post.mock.calls.at(-1)?.[0];
+		expect(lastCall.reply.root).toEqual({
+			uri: 'at://user/post/1',
+			cid: 'cid-user-1',
+		});
+		expect(lastCall.reply.parent).toEqual({
+			uri: 'at://user/post/1',
+			cid: 'cid-user-1',
+		});
 	});
 });
 

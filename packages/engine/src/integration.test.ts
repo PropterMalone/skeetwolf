@@ -20,7 +20,10 @@ function createMockAgent(): any {
 	return {
 		post: vi.fn().mockImplementation(() => {
 			postCounter++;
-			return Promise.resolve({ uri: `at://did:plc:bot/post/${postCounter}` });
+			return Promise.resolve({
+				uri: `at://did:plc:bot/post/${postCounter}`,
+				cid: `cid-mock-${postCounter}`,
+			});
 		}),
 		session: { did: 'did:plc:bot' },
 	};

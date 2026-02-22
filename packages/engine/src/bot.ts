@@ -21,9 +21,12 @@ export async function createAgent(config: BotConfig): Promise<AtpAgent> {
 	return agent;
 }
 
-export async function postMessage(agent: AtpAgent, text: string): Promise<string> {
+export async function postMessage(
+	agent: AtpAgent,
+	text: string,
+): Promise<{ uri: string; cid: string }> {
 	const response = await agent.post({ text });
-	return response.uri;
+	return { uri: response.uri, cid: response.cid };
 }
 
 export async function replyToPost(
@@ -33,7 +36,7 @@ export async function replyToPost(
 	parentCid: string,
 	rootUri: string,
 	rootCid: string,
-): Promise<string> {
+): Promise<{ uri: string; cid: string }> {
 	const response = await agent.post({
 		text,
 		reply: {
@@ -41,7 +44,7 @@ export async function replyToPost(
 			root: { uri: rootUri, cid: rootCid },
 		},
 	});
-	return response.uri;
+	return { uri: response.uri, cid: response.cid };
 }
 
 /**
