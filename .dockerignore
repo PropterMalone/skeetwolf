@@ -3,5 +3,10 @@ dist/
 coverage/
 *.tsbuildinfo
 .env
-.wrangler/
+.git/
+.claude/
+.beads/
+*.db
+*.db-wal
+*.db-shm
 data/
