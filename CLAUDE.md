@@ -25,8 +25,9 @@ Moderatorless Werewolf/Mafia game played through Bluesky. An automated bot manag
 packages/
 ├── shared/     # Functional core — types, pure game logic, role definitions
 │   └── src/
-│       ├── types.ts          # Game types (Player, Phase, Vote, NightAction, GameState)
+│       ├── types.ts          # Game types (Player, Phase, Vote, NightAction, GameState, Queue, Invite)
 │       ├── game-logic.ts     # Pure state machine (create, signup, roles, vote, night, win)
+│       ├── queue-logic.ts    # Pure queue + invite logic (public queue, invite games)
 │       └── index.ts
 ├── engine/     # Imperative shell — bot I/O, DB, game manager
 │   └── src/
@@ -84,6 +85,18 @@ FEED_HOSTNAME=      # Feed generator public hostname (for did.json)
 FEED_PUBLISHER_DID= # DID for describeFeedGenerator
 DB_PATH=            # Path to engine's SQLite DB (feed reads from this)
 ```
+
+## Deployment
+
+Docker Compose on malone. **Always commit before building** — `docker compose build` copies the working tree, so uncommitted changes silently ship (or silently don't). Run `npm run validate` then commit, then build.
+
+```bash
+docker compose build          # rebuild images
+docker compose up -d           # start/restart
+docker logs skeetwolf-engine-1 # check logs
+```
+
+The engine container runs as root; SQLite data lives in `./data/` (bind mount). After stopping the container, fix file ownership if needed: `sudo chown -R $(whoami) data/`.
 
 ## Testing
 

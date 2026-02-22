@@ -82,6 +82,52 @@ export const DEFAULT_CONFIG: GameConfig = {
 	signupDurationMs: 24 * 60 * 60 * 1000, // 24 hours
 };
 
+// -- Public Queue --
+
+export interface QueueEntry {
+	did: Did;
+	handle: Handle;
+	joinedAt: number;
+}
+
+export interface PublicQueue {
+	entries: QueueEntry[];
+}
+
+export interface QueueResult {
+	ok: boolean;
+	error?: string;
+	queue: PublicQueue;
+}
+
+// -- Invite Games --
+
+export type InviteStatus = 'pending' | 'active' | 'cancelled';
+
+export interface InviteSlot {
+	did: Did;
+	handle: Handle;
+	confirmed: boolean;
+}
+
+export interface InviteGame {
+	id: GameId;
+	initiatorDid: Did;
+	initiatorHandle: Handle;
+	slots: InviteSlot[];
+	status: InviteStatus;
+	createdAt: number;
+	config: GameConfig;
+}
+
+export interface InviteResult {
+	ok: boolean;
+	error?: string;
+	invite: InviteGame;
+}
+
+// -- Game State --
+
 export interface GameState {
 	id: GameId;
 	config: GameConfig;

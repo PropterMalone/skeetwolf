@@ -5,10 +5,16 @@
 
 export type MentionCommand =
 	| { kind: 'new_game' }
+	| { kind: 'new_invite_game'; handles: string[] }
 	| { kind: 'join'; gameId: string }
 	| { kind: 'start'; gameId: string }
 	| { kind: 'vote'; gameId: string; targetHandle: string }
 	| { kind: 'unvote'; gameId: string }
+	| { kind: 'queue' }
+	| { kind: 'unqueue' }
+	| { kind: 'confirm'; gameId: string }
+	| { kind: 'invite'; gameId: string; handle: string }
+	| { kind: 'cancel'; gameId: string }
 	| { kind: 'unknown'; text: string };
 
 export type DmCommand =
@@ -39,8 +45,39 @@ export function parseMention(rawText: string, botHandle?: string): MentionComman
 	text = text.trim();
 	const lower = text.toLowerCase();
 
+	// "new game @a @b @c" — invite game (must check before plain "new game")
 	if (lower.includes('new game')) {
+		const handles = extractHandles(text);
+		if (handles.length > 0) {
+			return { kind: 'new_invite_game', handles };
+		}
 		return { kind: 'new_game' };
+	}
+
+	// Queue commands
+	if (lower.includes('leave queue') || lower.includes('unqueue')) {
+		return { kind: 'unqueue' };
+	}
+	if (lower.includes('queue') || lower.includes('lfg')) {
+		return { kind: 'queue' };
+	}
+
+	// Confirm invite: "confirm #id"
+	const confirmMatch = lower.match(/confirm\s+#?(\w+)/);
+	if (confirmMatch?.[1]) {
+		return { kind: 'confirm', gameId: confirmMatch[1] };
+	}
+
+	// Invite replacement: "invite #id @handle"
+	const inviteMatch = text.match(/invite\s+#?(\w+)\s+@([\w.:-]+)/i);
+	if (inviteMatch?.[1] && inviteMatch[2]) {
+		return { kind: 'invite', gameId: inviteMatch[1], handle: inviteMatch[2] };
+	}
+
+	// Cancel invite: "cancel #id"
+	const cancelMatch = lower.match(/cancel\s+#?(\w+)/);
+	if (cancelMatch?.[1]) {
+		return { kind: 'cancel', gameId: cancelMatch[1] };
 	}
 
 	const joinMatch = lower.match(/join\s+#?(\w+)/);
@@ -104,6 +141,12 @@ export function parseDm(rawText: string): DmCommand {
 function extractGameId(lower: string): string | undefined {
 	const match = lower.match(/#(\w+)/);
 	return match?.[1];
+}
+
+/** Extract all @handles from text (excluding the bot handle if already stripped) */
+function extractHandles(text: string): string[] {
+	const matches = text.matchAll(/@([\w.:-]+)/g);
+	return [...matches].map((m) => m[1]);
 }
 
 function escapeRegex(s: string): string {

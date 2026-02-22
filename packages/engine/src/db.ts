@@ -1,4 +1,4 @@
-import type { GameId, GameState } from '@skeetwolf/shared';
+import type { GameId, GameState, InviteGame, PublicQueue, QueueEntry } from '@skeetwolf/shared';
 /**
  * SQLite persistence for game state.
  * Stores serialized game state per game — simple and sufficient for MVP.
@@ -28,6 +28,19 @@ CREATE TABLE IF NOT EXISTS game_posts (
   indexed_at INTEGER NOT NULL
 );
 CREATE INDEX IF NOT EXISTS idx_game_posts_game_id ON game_posts(game_id, indexed_at);
+
+CREATE TABLE IF NOT EXISTS public_queue (
+  did TEXT PRIMARY KEY,
+  handle TEXT NOT NULL,
+  joined_at INTEGER NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS invite_games (
+  id TEXT PRIMARY KEY,
+  state TEXT NOT NULL,
+  created_at INTEGER NOT NULL,
+  updated_at INTEGER NOT NULL
+);
 `;
 
 export function openDatabase(path: string): Database.Database {
@@ -135,4 +148,64 @@ export function loadBotState(db: Database.Database, key: string): string | null 
 		| { value: string }
 		| undefined;
 	return row?.value ?? null;
+}
+
+// -- Public Queue --
+
+export function loadPublicQueue(db: Database.Database): PublicQueue {
+	const rows = db
+		.prepare('SELECT did, handle, joined_at FROM public_queue ORDER BY joined_at ASC')
+		.all() as {
+		did: string;
+		handle: string;
+		joined_at: number;
+	}[];
+	return {
+		entries: rows.map((r) => ({ did: r.did, handle: r.handle, joinedAt: r.joined_at })),
+	};
+}
+
+export function saveQueueEntry(db: Database.Database, entry: QueueEntry): void {
+	db.prepare('INSERT OR IGNORE INTO public_queue (did, handle, joined_at) VALUES (?, ?, ?)').run(
+		entry.did,
+		entry.handle,
+		entry.joinedAt,
+	);
+}
+
+export function removeQueueEntry(db: Database.Database, did: string): void {
+	db.prepare('DELETE FROM public_queue WHERE did = ?').run(did);
+}
+
+export function clearQueueEntries(db: Database.Database, dids: string[]): void {
+	if (dids.length === 0) return;
+	const placeholders = dids.map(() => '?').join(',');
+	db.prepare(`DELETE FROM public_queue WHERE did IN (${placeholders})`).run(...dids);
+}
+
+// -- Invite Games --
+
+export function saveInviteGame(db: Database.Database, invite: InviteGame): void {
+	const now = Date.now();
+	const json = JSON.stringify(invite);
+	db.prepare(
+		`INSERT INTO invite_games (id, state, created_at, updated_at)
+		VALUES (?, ?, ?, ?)
+		ON CONFLICT(id) DO UPDATE SET state = ?, updated_at = ?`,
+	).run(invite.id, json, invite.createdAt, now, json, now);
+}
+
+export function loadInviteGame(db: Database.Database, id: string): InviteGame | null {
+	const row = db.prepare('SELECT state FROM invite_games WHERE id = ?').get(id) as
+		| { state: string }
+		| undefined;
+	if (!row) return null;
+	return JSON.parse(row.state) as InviteGame;
+}
+
+export function loadActiveInviteGames(db: Database.Database): InviteGame[] {
+	const rows = db
+		.prepare("SELECT state FROM invite_games WHERE json_extract(state, '$.status') = 'pending'")
+		.all() as { state: string }[];
+	return rows.map((r) => JSON.parse(r.state) as InviteGame);
 }
