@@ -50,6 +50,10 @@ async function main() {
 	let dmMessageId: string | undefined = loadBotState(db, 'dm_message_id') ?? undefined;
 	let backoffMs = POLL_INTERVAL_MS;
 
+	// Safety net: track processed mention URIs to prevent duplicate handling
+	// even if updateSeenNotifications races or fails
+	const processedMentionUris = new Set<string>();
+
 	async function poll() {
 		try {
 			const { notifications, cursor: newCursor } = await pollMentions(agent, mentionCursor);
@@ -58,7 +62,15 @@ async function main() {
 				saveBotState(db, 'mention_cursor', newCursor);
 			}
 
+			const botDid = agent.session?.did;
 			for (const mention of notifications) {
+				// Never process the bot's own posts
+				if (botDid && mention.authorDid === botDid) continue;
+				if (processedMentionUris.has(mention.uri)) {
+					console.log(`Skipping already-processed mention: ${mention.uri}`);
+					continue;
+				}
+				processedMentionUris.add(mention.uri);
 				await handleMention(
 					manager,
 					agent,
@@ -68,6 +80,12 @@ async function main() {
 					mention.authorHandle,
 					mention.text,
 				);
+			}
+
+			// Cap the set size to prevent unbounded memory growth
+			if (processedMentionUris.size > 1000) {
+				const toDelete = [...processedMentionUris].slice(0, 500);
+				for (const uri of toDelete) processedMentionUris.delete(uri);
 			}
 
 			if (chatAgent) {
@@ -230,6 +248,36 @@ async function handleMention(
 				console.log(`${authorHandle} unvoted in game ${cmd.gameId}`);
 				await manager.reply(cmd.gameId, 'Vote withdrawn', postUri, postCid);
 			}
+			break;
+		}
+		case 'queue': {
+			console.log(`${authorHandle} joining queue`);
+			await manager.addToQueue(authorDid, authorHandle, postUri, postCid);
+			break;
+		}
+		case 'unqueue': {
+			console.log(`${authorHandle} leaving queue`);
+			await manager.removeFromQueue(authorDid, postUri, postCid);
+			break;
+		}
+		case 'new_invite_game': {
+			console.log(`${authorHandle} creating invite game for ${cmd.handles.join(', ')}`);
+			await manager.createInviteGame(authorDid, authorHandle, cmd.handles, postUri, postCid);
+			break;
+		}
+		case 'confirm': {
+			console.log(`${authorHandle} confirming invite ${cmd.gameId}`);
+			await manager.confirmInviteSlot(cmd.gameId, authorDid, postUri, postCid);
+			break;
+		}
+		case 'invite': {
+			console.log(`${authorHandle} inviting @${cmd.handle} to ${cmd.gameId}`);
+			await manager.addInvitePlayer(cmd.gameId, authorDid, cmd.handle, postUri, postCid);
+			break;
+		}
+		case 'cancel': {
+			console.log(`${authorHandle} cancelling invite ${cmd.gameId}`);
+			await manager.cancelInviteGame(cmd.gameId, authorDid, postUri, postCid);
 			break;
 		}
 		case 'unknown':

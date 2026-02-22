@@ -73,7 +73,7 @@ export async function pollMentions(
 ): Promise<{ notifications: MentionNotification[]; cursor: string | undefined }> {
 	const response = await agent.listNotifications({ cursor, limit: 50 });
 	const mentions = response.data.notifications
-		.filter((n) => n.reason === 'mention' || n.reason === 'reply')
+		.filter((n) => (n.reason === 'mention' || n.reason === 'reply') && !n.isRead)
 		.map((n) => ({
 			uri: n.uri,
 			cid: n.cid,
@@ -82,6 +82,11 @@ export async function pollMentions(
 			text: (n.record as { text?: string }).text ?? '',
 			indexedAt: n.indexedAt,
 		}));
+
+	// Mark all notifications as seen so they won't be returned as unread next poll
+	if (mentions.length > 0) {
+		await agent.updateSeenNotifications();
+	}
 
 	return {
 		notifications: mentions,
