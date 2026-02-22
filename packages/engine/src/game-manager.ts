@@ -23,7 +23,7 @@ import {
 	tallyVotes,
 } from '@skeetwolf/shared';
 import type Database from 'better-sqlite3';
-import { type DmSender, postMessage } from './bot.js';
+import { type DmSender, postMessage, replyToPost } from './bot.js';
 import { type PostKind, loadActiveGames, recordGamePost, saveGame } from './db.js';
 
 export class GameManager {
@@ -36,6 +36,11 @@ export class GameManager {
 		private agent: AtpAgent,
 		private dm: DmSender,
 	) {}
+
+	/** Get a game's current state (or null if not loaded) */
+	getGame(gameId: GameId): GameState | null {
+		return this.games.get(gameId) ?? null;
+	}
 
 	/** Load all active games from the database into memory */
 	hydrate(): void {
@@ -146,6 +151,26 @@ export class GameManager {
 		return null;
 	}
 
+	/** Cast a vote and check if majority was reached — triggers endDay if so */
+	async voteAndCheckMajority(
+		gameId: GameId,
+		voterDid: string,
+		targetDid: string,
+	): Promise<{ error: string | null; majorityReached: boolean }> {
+		const error = this.vote(gameId, voterDid, targetDid);
+		if (error) return { error, majorityReached: false };
+
+		const state = this.games.get(gameId);
+		if (!state) return { error: null, majorityReached: false };
+
+		const { target } = tallyVotes(state);
+		if (target) {
+			await this.endDay(gameId);
+			return { error: null, majorityReached: true };
+		}
+		return { error: null, majorityReached: false };
+	}
+
 	/** Process a night action */
 	nightAction(gameId: GameId, action: NightAction): string | null {
 		const state = this.games.get(gameId);
@@ -205,6 +230,7 @@ export class GameManager {
 		}
 
 		this.persist(state);
+		this.cleanupFinishedGame(state);
 	}
 
 	/** End the night phase — resolve actions, announce, advance */
@@ -248,6 +274,7 @@ export class GameManager {
 		}
 
 		this.persist(state);
+		this.cleanupFinishedGame(state);
 	}
 
 	/** Find the active game a player is in. Returns null if not in any game. */
@@ -339,6 +366,14 @@ export class GameManager {
 		);
 	}
 
+	/** Remove a finished game from in-memory state (already persisted to DB) */
+	private cleanupFinishedGame(state: GameState): void {
+		if (state.winner) {
+			this.games.delete(state.id);
+			this.mafiaRelayIds.delete(state.id);
+		}
+	}
+
 	/** Post a message and record it in game_posts for the feed generator */
 	private async post(gameId: GameId, text: string, kind: PostKind): Promise<string> {
 		const uri = await postMessage(this.agent, text);
@@ -347,6 +382,15 @@ export class GameManager {
 		const phase = state ? `${state.phase.kind}-${state.phase.number}` : null;
 		recordGamePost(this.db, { uri, gameId, authorDid: botDid, kind, phase });
 		return uri;
+	}
+
+	/** Reply to a mention and record the reply in game_posts */
+	async reply(gameId: GameId, text: string, parentUri: string, parentCid: string): Promise<void> {
+		const uri = await replyToPost(this.agent, text, parentUri, parentCid, parentUri, parentCid);
+		const botDid = this.agent.session?.did ?? 'unknown';
+		const state = this.games.get(gameId);
+		const phase = state ? `${state.phase.kind}-${state.phase.number}` : null;
+		recordGamePost(this.db, { uri, gameId, authorDid: botDid, kind: 'reply', phase });
 	}
 
 	/** Record a player's post (mention/reply) as part of a game */
