@@ -4,7 +4,7 @@
  */
 import { createAgent, pollMentions, resolveHandle } from './bot.js';
 import { parseDm, parseMention } from './command-parser.js';
-import { openDatabase } from './db.js';
+import { loadBotState, openDatabase, saveBotState } from './db.js';
 import {
 	createBlueskyDmSender,
 	createChatAgent,
@@ -46,14 +46,17 @@ async function main() {
 		`Skeetwolf engine started as @${BOT_HANDLE}. DMs: ${useLiveDms ? 'LIVE' : 'console'}. Polling...`,
 	);
 
-	let mentionCursor: string | undefined;
-	let dmMessageId: string | undefined;
+	let mentionCursor: string | undefined = loadBotState(db, 'mention_cursor') ?? undefined;
+	let dmMessageId: string | undefined = loadBotState(db, 'dm_message_id') ?? undefined;
 	let backoffMs = POLL_INTERVAL_MS;
 
 	async function poll() {
 		try {
 			const { notifications, cursor: newCursor } = await pollMentions(agent, mentionCursor);
-			mentionCursor = newCursor;
+			if (newCursor) {
+				mentionCursor = newCursor;
+				saveBotState(db, 'mention_cursor', newCursor);
+			}
 
 			for (const mention of notifications) {
 				await handleMention(
@@ -69,7 +72,10 @@ async function main() {
 
 			if (chatAgent) {
 				const { messages, latestMessageId } = await pollInboundDms(chatAgent, dmMessageId);
-				dmMessageId = latestMessageId;
+				if (latestMessageId) {
+					dmMessageId = latestMessageId;
+					saveBotState(db, 'dm_message_id', latestMessageId);
+				}
 
 				for (const msg of messages) {
 					await handleDm(manager, dm, msg.senderDid, msg.text);

@@ -56,12 +56,12 @@ export class GameManager {
 		const state = createGame(id);
 		this.persist(state);
 
-		const uri = await this.post(
+		const { uri, cid } = await this.post(
 			id,
 			`🐺 Skeetwolf Game #${id} — signup is open!\n\nReply to join. Game starts when we have ${state.config.minPlayers}+ players.`,
 			'announcement',
 		);
-		const withUri: GameState = { ...state, announcementUri: uri };
+		const withUri: GameState = { ...state, announcementUri: uri, announcementCid: cid };
 		this.persist(withUri);
 
 		return withUri;
@@ -375,20 +375,29 @@ export class GameManager {
 	}
 
 	/** Post a message and record it in game_posts for the feed generator */
-	private async post(gameId: GameId, text: string, kind: PostKind): Promise<string> {
-		const uri = await postMessage(this.agent, text);
+	private async post(
+		gameId: GameId,
+		text: string,
+		kind: PostKind,
+	): Promise<{ uri: string; cid: string }> {
+		const { uri, cid } = await postMessage(this.agent, text);
 		const botDid = this.agent.session?.did ?? 'unknown';
 		const state = this.games.get(gameId);
 		const phase = state ? `${state.phase.kind}-${state.phase.number}` : null;
 		recordGamePost(this.db, { uri, gameId, authorDid: botDid, kind, phase });
-		return uri;
+		return { uri, cid };
 	}
 
-	/** Reply to a mention and record the reply in game_posts */
+	/** Reply to a mention and record the reply in game_posts.
+	 * Threads under the game announcement (root) when available,
+	 * with the triggering mention as the parent. */
 	async reply(gameId: GameId, text: string, parentUri: string, parentCid: string): Promise<void> {
-		const uri = await replyToPost(this.agent, text, parentUri, parentCid, parentUri, parentCid);
-		const botDid = this.agent.session?.did ?? 'unknown';
 		const state = this.games.get(gameId);
+		const rootUri = state?.announcementUri ?? parentUri;
+		const rootCid = state?.announcementCid ?? parentCid;
+
+		const { uri } = await replyToPost(this.agent, text, parentUri, parentCid, rootUri, rootCid);
+		const botDid = this.agent.session?.did ?? 'unknown';
 		const phase = state ? `${state.phase.kind}-${state.phase.number}` : null;
 		recordGamePost(this.db, { uri, gameId, authorDid: botDid, kind: 'reply', phase });
 	}

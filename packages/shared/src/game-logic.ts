@@ -30,6 +30,7 @@ export function createGame(id: GameId, config: Partial<GameConfig> = {}): GameSt
 		nightActions: [],
 		winner: null,
 		announcementUri: null,
+		announcementCid: null,
 		phaseStartedAt: now,
 		createdAt: now,
 	};

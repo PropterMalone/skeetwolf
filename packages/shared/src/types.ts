@@ -93,6 +93,8 @@ export interface GameState {
 	winner: WinCondition;
 	/** Post URI of the game announcement (thread root) */
 	announcementUri: string | null;
+	/** Post CID of the game announcement (needed for reply threading) */
+	announcementCid: string | null;
 	/** Timestamp when the current phase started (for timer-based transitions) */
 	phaseStartedAt: number;
 	createdAt: number;
