@@ -64,7 +64,14 @@ export function loadActiveGames(db: Database.Database): GameState[] {
 }
 
 /** Post kinds for the game_posts table */
-export type PostKind = 'announcement' | 'phase' | 'vote_result' | 'death' | 'game_over' | 'player';
+export type PostKind =
+	| 'announcement'
+	| 'phase'
+	| 'vote_result'
+	| 'death'
+	| 'game_over'
+	| 'player'
+	| 'reply';
 
 export interface GamePost {
 	uri: string;
