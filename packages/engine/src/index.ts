@@ -29,7 +29,7 @@ async function main() {
 		process.exit(1);
 	}
 
-	const db = openDatabase('skeetwolf.db');
+	const db = openDatabase(process.env.DB_PATH || 'skeetwolf.db');
 	const agent = await createAgent({ identifier, password });
 
 	if (agent.session?.handle) {

@@ -13,7 +13,7 @@ Moderatorless Werewolf/Mafia game played through Bluesky. An automated bot manag
 - **Package Manager**: npm workspaces
 - **ATProto**: @atproto/api for Bluesky interaction
 - **Database**: SQLite via better-sqlite3 (game state persistence)
-- **Deployment target**: Mini PC (long-running Node service) — not yet available
+- **Deployment target**: malone (`ssh malone` / `ssh malone-ts`) — AMD Ryzen 7 7730U, 32GB RAM, Ubuntu Server 24.04, Docker + Node.js 22. See `~/.claude/projects/C--Users-karls/memory/malone.md` for full details.
 
 ## Architecture
 
@@ -34,10 +34,11 @@ packages/
 │       ├── db.ts             # SQLite persistence (serialized game state)
 │       ├── game-manager.ts   # Bridges game logic with I/O
 │       └── index.ts          # Entry point, polling loop
-├── feed/       # Feed generator (Cloudflare Worker)
+├── feed/       # Feed generator — per-game feed skeletons from SQLite
 │   └── src/
-│       ├── index.ts          # Worker entry point
-│       └── handler.ts        # Feed skeleton handler
+│       ├── handler.ts       # Pure feed logic (createFeedHandler, listFeeds)
+│       ├── handler.test.ts  # Feed handler tests
+│       └── index.ts         # HTTP server (getFeedSkeleton, describeFeedGenerator, did.json)
 └── labeler/    # ATProto labeler for game post tagging (future)
 ```
 
@@ -45,10 +46,13 @@ packages/
 
 - **Game state is immutable** — all game-logic functions return new state, never mutate
 - **DB stores serialized GameState** — simple JSON blob per game, no normalized tables yet
-- **DMs live** — `DmSender` interface with real Bluesky chat.bsky.convo implementation + console fallback
-- **Phase timers** — tick-based expiry checks; GameManager.tick() transitions expired phases
+- **DMs via chat.bsky.convo** — bot-relay pattern (no group DMs on Bluesky), `DmSender` interface with live + console implementations
+- **Phase timers** — `phaseStartedAt` on GameState, `manager.tick()` auto-transitions expired phases
+- **Command parsing** — `parseMention` (public commands) + `parseDm` (night actions, mafia chat)
 - **Reply threading** — bot replies thread under game announcement (root) with triggering mention as parent
 - **Cursor persistence** — mention and DM poll cursors saved to `bot_state` table, survive restarts
+- **Feed generator** — reads `game_posts` table from engine's SQLite, no labeler yet
+- **Post recording** — engine records all game posts (announcement, phase, vote_result, death, game_over, player) to `game_posts` table
 - **No custom lexicon yet** — MVP uses mention-based commands; structured records later
 
 ## Commands
@@ -74,6 +78,11 @@ npm run dev         # run engine (requires BSKY_IDENTIFIER + BSKY_PASSWORD)
 ```
 BSKY_IDENTIFIER=    # Bot's Bluesky handle or DID
 BSKY_PASSWORD=      # Bot's app password
+LIVE_DMS=1          # Enable real Bluesky DMs (default: console logging)
+FEED_PORT=3001      # Feed generator HTTP port
+FEED_HOSTNAME=      # Feed generator public hostname (for did.json)
+FEED_PUBLISHER_DID= # DID for describeFeedGenerator
+DB_PATH=            # Path to engine's SQLite DB (feed reads from this)
 ```
 
 ## Testing
@@ -84,10 +93,11 @@ BSKY_PASSWORD=      # Bot's app password
 
 ## Future Work (roughly ordered)
 
-1. ~~Real DM sender (chat.bsky.convo)~~ — done
-2. ~~Phase timer implementation~~ — done
-3. ~~Vote parsing from mentions~~ — done
-4. ~~Reply threading + cursor persistence~~ — done
-5. Labeler for game posts — label bot posts by type (announcement, phase, death, etc.)
-6. Feed generator (Cloudflare Worker) — serve labeled game posts as a custom feed
-7. Custom lexicon for structured game actions
+1. ~~Real DM sender (chat.bsky.convo)~~ ✓
+2. ~~Phase timer implementation~~ ✓
+3. ~~Vote parsing from mentions~~ ✓
+4. ~~Feed generator~~ ✓
+5. Labeler (pre-launch — lets non-players mute game posts)
+6. Feed registration with Bluesky (publishFeed call)
+7. Integration testing (end-to-end with real Bluesky posts)
+8. Custom lexicon for structured game actions

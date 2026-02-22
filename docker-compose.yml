@@ -1,0 +1,39 @@
+services:
+  engine:
+    build: .
+    command: ["node", "packages/engine/dist/index.js"]
+    env_file: .env
+    environment:
+      DB_PATH: /data/skeetwolf.db
+    volumes:
+      - ./data:/data
+    restart: unless-stopped
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+  feed:
+    build: .
+    command: ["node", "packages/feed/dist/index.js"]
+    env_file: .env
+    environment:
+      DB_PATH: /data/skeetwolf.db
+    volumes:
+      - ./data:/data:ro
+    ports:
+      - "3001:3001"
+    depends_on:
+      - engine
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://localhost:3001/').then(r => process.exit(r.ok ? 0 : 1)).catch(() => process.exit(1))"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+    restart: unless-stopped
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
