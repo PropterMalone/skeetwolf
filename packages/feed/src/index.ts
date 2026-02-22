@@ -13,9 +13,9 @@
 import { createServer } from 'node:http';
 import { createFeedHandler } from './handler.js';
 
-const PORT = Number(process.env.FEED_PORT) || 3001;
-const DB_PATH = process.env.DB_PATH || '../engine/skeetwolf.db';
-const PUBLISHER_DID = process.env.FEED_PUBLISHER_DID ?? 'did:web:skeetwolf.example';
+const PORT = Number(process.env['FEED_PORT']) || 3001;
+const DB_PATH = process.env['DB_PATH'] || '../engine/skeetwolf.db';
+const PUBLISHER_DID = process.env['FEED_PUBLISHER_DID'] ?? 'did:web:skeetwolf.example';
 
 const handler = createFeedHandler(DB_PATH, PUBLISHER_DID);
 
@@ -47,7 +47,7 @@ const server = createServer(async (req, res) => {
 	}
 
 	if (url.pathname === '/.well-known/did.json') {
-		const hostname = process.env.FEED_HOSTNAME ?? 'localhost';
+		const hostname = process.env['FEED_HOSTNAME'] ?? 'localhost';
 		res.writeHead(200, { 'Content-Type': 'application/json' });
 		res.end(
 			JSON.stringify({

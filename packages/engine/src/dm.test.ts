@@ -153,7 +153,7 @@ describe('createBlueskyDmSender', () => {
 describe('pollInboundDms', () => {
 	it('throws if agent not authenticated', async () => {
 		const mock = createMockChatAgent();
-		(mock as Record<string, unknown>).session = undefined;
+		(mock as Record<string, unknown>)['session'] = undefined;
 
 		await expect(pollInboundDms(mock as unknown as AtpAgent)).rejects.toThrow(
 			'chat agent not authenticated',
@@ -254,7 +254,7 @@ describe('pollInboundDms', () => {
 		const result = await pollInboundDms(mock as unknown as AtpAgent);
 
 		expect(result.messages).toHaveLength(1);
-		expect(result.messages[0].senderDid).toBe('did:plc:alice');
+		expect(result.messages[0]!.senderDid).toBe('did:plc:alice');
 	});
 
 	it('filters messages older than sinceMessageId', async () => {
@@ -286,7 +286,7 @@ describe('pollInboundDms', () => {
 		const result = await pollInboundDms(mock as unknown as AtpAgent, 'msg-3');
 
 		expect(result.messages).toHaveLength(1);
-		expect(result.messages[0].messageId).toBe('msg-5');
+		expect(result.messages[0]!.messageId).toBe('msg-5');
 		expect(result.latestMessageId).toBe('msg-5');
 	});
 

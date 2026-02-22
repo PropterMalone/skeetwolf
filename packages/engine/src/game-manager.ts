@@ -201,9 +201,10 @@ export class GameManager {
 		const { target, counts } = tallyVotes(state);
 
 		// Announce vote results
+		const currentState = state;
 		const countStr = [...counts.entries()]
 			.map(([did, n]) => {
-				const p = state.players.find((pl) => pl.did === did);
+				const p = currentState.players.find((pl) => pl.did === did);
 				return `${p?.handle ?? did}: ${n}`;
 			})
 			.join(', ');

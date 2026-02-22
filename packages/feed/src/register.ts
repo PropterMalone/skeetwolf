@@ -15,10 +15,10 @@
 import { AtpAgent } from '@atproto/api';
 
 async function main() {
-	const identifier = process.env.BSKY_IDENTIFIER;
-	const password = process.env.BSKY_PASSWORD;
-	const feedServiceDid = process.env.FEED_SERVICE_DID;
-	const feedHostname = process.env.FEED_HOSTNAME;
+	const identifier = process.env['BSKY_IDENTIFIER'];
+	const password = process.env['BSKY_PASSWORD'];
+	const feedServiceDid = process.env['FEED_SERVICE_DID'];
+	const feedHostname = process.env['FEED_HOSTNAME'];
 
 	if (!identifier || !password || !feedServiceDid || !feedHostname) {
 		console.error(

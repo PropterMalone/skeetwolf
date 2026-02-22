@@ -115,25 +115,28 @@ export async function pollInboundDms(
 		});
 
 		for (const msg of msgData.messages) {
+			const sender = msg.sender as { did: string };
+			const msgId = msg.id as string;
+
 			// Skip our own messages
-			if (msg.sender.did === botDid) continue;
+			if (sender.did === botDid) continue;
 
 			// Skip if we've already seen this message
-			if (sinceMessageId && msg.id <= sinceMessageId) continue;
+			if (sinceMessageId && msgId <= sinceMessageId) continue;
 
 			// Only handle regular text messages
 			if (msg.$type !== 'chat.bsky.convo.defs#messageView') continue;
 
 			allMessages.push({
-				senderDid: msg.sender.did,
+				senderDid: sender.did,
 				convoId: convo.id,
-				messageId: msg.id,
+				messageId: msgId,
 				text: (msg as { text?: string }).text ?? '',
-				sentAt: msg.sentAt,
+				sentAt: msg.sentAt as string,
 			});
 
-			if (!latestId || msg.id > latestId) {
-				latestId = msg.id;
+			if (!latestId || msgId > latestId) {
+				latestId = msgId;
 			}
 		}
 
