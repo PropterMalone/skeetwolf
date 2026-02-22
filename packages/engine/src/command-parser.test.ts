@@ -48,6 +48,59 @@ describe('parseMention', () => {
 		expect(parseMention('unvote', bot)).toEqual({ kind: 'unvote', gameId: '' });
 	});
 
+	it('parses "new game @a @b @c" as invite game', () => {
+		expect(parseMention('@skeetwolf.bsky.social new game @alice @bob @charlie', bot)).toEqual({
+			kind: 'new_invite_game',
+			handles: ['alice', 'bob', 'charlie'],
+		});
+	});
+
+	it('parses "new game @a.bsky.social @b.bsky.social" with full handles', () => {
+		const result = parseMention('new game @alice.bsky.social @bob.bsky.social', bot);
+		expect(result).toEqual({
+			kind: 'new_invite_game',
+			handles: ['alice.bsky.social', 'bob.bsky.social'],
+		});
+	});
+
+	it('parses "queue"', () => {
+		expect(parseMention('@skeetwolf.bsky.social queue', bot)).toEqual({ kind: 'queue' });
+	});
+
+	it('parses "lfg" as queue', () => {
+		expect(parseMention('lfg', bot)).toEqual({ kind: 'queue' });
+	});
+
+	it('parses "unqueue"', () => {
+		expect(parseMention('unqueue', bot)).toEqual({ kind: 'unqueue' });
+	});
+
+	it('parses "leave queue"', () => {
+		expect(parseMention('leave queue', bot)).toEqual({ kind: 'unqueue' });
+	});
+
+	it('parses "confirm #id"', () => {
+		expect(parseMention('confirm #abc123', bot)).toEqual({
+			kind: 'confirm',
+			gameId: 'abc123',
+		});
+	});
+
+	it('parses "invite #id @handle"', () => {
+		expect(parseMention('invite #abc123 @alice.bsky.social', bot)).toEqual({
+			kind: 'invite',
+			gameId: 'abc123',
+			handle: 'alice.bsky.social',
+		});
+	});
+
+	it('parses "cancel #id"', () => {
+		expect(parseMention('cancel #abc123', bot)).toEqual({
+			kind: 'cancel',
+			gameId: 'abc123',
+		});
+	});
+
 	it('returns unknown for unrecognized text', () => {
 		const result = parseMention('hello world', bot);
 		expect(result.kind).toBe('unknown');
