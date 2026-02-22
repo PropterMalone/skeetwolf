@@ -25,7 +25,7 @@ export interface FeedHandler {
  * Feed URI format: at://{did}/app.bsky.feed.generator/skeetwolf-{gameId}
  * The feed param is the full AT URI. We extract the game ID from the rkey.
  */
-export function createFeedHandler(dbPath: string): FeedHandler {
+export function createFeedHandler(dbPath: string, publisherDid: string): FeedHandler {
 	const db = new Database(dbPath, { readonly: true });
 	db.pragma('journal_mode = WAL');
 
@@ -60,7 +60,7 @@ export function createFeedHandler(dbPath: string): FeedHandler {
 			game_id: string;
 		}[];
 		return rows.map((r) => ({
-			uri: `at://did:web:skeetwolf.example/app.bsky.feed.generator/skeetwolf-${r.game_id}`,
+			uri: `at://${publisherDid}/app.bsky.feed.generator/skeetwolf-${r.game_id}`,
 		}));
 	};
 

@@ -53,7 +53,7 @@ describe('feed handler', () => {
 	});
 
 	it('returns empty feed for unknown game', () => {
-		handler = createFeedHandler(TEST_DB);
+		handler = createFeedHandler(TEST_DB, 'did:web:test.example');
 		const params = new URLSearchParams({
 			feed: 'at://did:web:example/app.bsky.feed.generator/skeetwolf-nonexistent',
 		});
@@ -66,7 +66,7 @@ describe('feed handler', () => {
 		insertPost(db, 'at://did:plc:bot/post/2', 'game1', 2000);
 		insertPost(db, 'at://did:plc:bot/post/3', 'game2', 3000); // different game
 
-		handler = createFeedHandler(TEST_DB);
+		handler = createFeedHandler(TEST_DB, 'did:web:test.example');
 		const params = new URLSearchParams({
 			feed: 'at://did:web:example/app.bsky.feed.generator/skeetwolf-game1',
 		});
@@ -82,7 +82,7 @@ describe('feed handler', () => {
 			insertPost(db, `at://did:plc:bot/post/${i}`, 'game1', i * 1000);
 		}
 
-		handler = createFeedHandler(TEST_DB);
+		handler = createFeedHandler(TEST_DB, 'did:web:test.example');
 
 		// First page: limit 2
 		const page1 = handler(
@@ -108,13 +108,13 @@ describe('feed handler', () => {
 	});
 
 	it('returns empty feed when no feed param', () => {
-		handler = createFeedHandler(TEST_DB);
+		handler = createFeedHandler(TEST_DB, 'did:web:test.example');
 		const result = handler(new URLSearchParams());
 		expect(result.feed).toHaveLength(0);
 	});
 
 	it('returns empty feed for non-skeetwolf feed URI', () => {
-		handler = createFeedHandler(TEST_DB);
+		handler = createFeedHandler(TEST_DB, 'did:web:test.example');
 		const params = new URLSearchParams({
 			feed: 'at://did:web:example/app.bsky.feed.generator/something-else',
 		});
@@ -126,7 +126,7 @@ describe('feed handler', () => {
 		insertPost(db, 'at://did:plc:bot/post/1', 'game1', 1000);
 		insertPost(db, 'at://did:plc:bot/post/2', 'game2', 2000);
 
-		handler = createFeedHandler(TEST_DB);
+		handler = createFeedHandler(TEST_DB, 'did:web:test.example');
 		const feeds = handler.listFeeds();
 		expect(feeds).toHaveLength(2);
 		expect(feeds[0]?.uri).toContain('skeetwolf-game1');
