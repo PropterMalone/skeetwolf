@@ -71,6 +71,18 @@ describe('parseMention', () => {
 		expect(parseMention('lfg', bot)).toEqual({ kind: 'queue' });
 	});
 
+	it('parses "queue?" as queue_status', () => {
+		expect(parseMention('queue?', bot)).toEqual({ kind: 'queue_status' });
+	});
+
+	it('parses "queue status" as queue_status', () => {
+		expect(parseMention('queue status', bot)).toEqual({ kind: 'queue_status' });
+	});
+
+	it('parses "who\'s in the queue" as queue_status', () => {
+		expect(parseMention("who's in the queue", bot)).toEqual({ kind: 'queue_status' });
+	});
+
 	it('parses "unqueue"', () => {
 		expect(parseMention('unqueue', bot)).toEqual({ kind: 'unqueue' });
 	});

@@ -498,6 +498,22 @@ export class GameManager {
 		}
 	}
 
+	/** Report queue status */
+	async queueStatus(replyUri: string, replyCid: string): Promise<void> {
+		const entries = this.publicQueue.entries;
+		const minPlayers = 5; // TODO: make configurable
+		if (entries.length === 0) {
+			await this.replyNoGame(`Queue is empty (need ${minPlayers} to start)`, replyUri, replyCid);
+		} else {
+			const names = entries.map((e) => `@${e.handle}`).join(', ');
+			await this.replyNoGame(
+				`Queue: ${entries.length}/${minPlayers} — ${names}`,
+				replyUri,
+				replyCid,
+			);
+		}
+	}
+
 	/** Remove a player from the public queue */
 	async removeFromQueue(did: Did, replyUri: string, replyCid: string): Promise<void> {
 		const result = removeFromQueue(this.publicQueue, did);
