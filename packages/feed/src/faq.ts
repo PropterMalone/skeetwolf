@@ -42,7 +42,7 @@ export const FAQ_HTML = `<!DOCTYPE html>
 <h2>How a Game Works</h2>
 <p>Each game alternates between <strong>day</strong> and <strong>night</strong> phases:</p>
 <ul>
-  <li><strong>Night 0</strong> — Roles are dealt via DM. Power roles (cop, doctor) submit their first actions. No public posts yet.</li>
+  <li><strong>Night 0</strong> — Roles are dealt via DM. Cop investigates, doctor protects, mafia coordinates — but <strong>no kill</strong>. First kill happens Night 1. No public posts yet.</li>
   <li><strong>Day</strong> — The bot posts a public thread. Everyone discusses and votes. If a majority votes for someone, that player is eliminated and their role is revealed.</li>
   <li><strong>Night</strong> — The thread locks. Mafia chooses a target to kill (via DM). Cop and doctor submit actions via DM.</li>
   <li>Repeat until one side wins.</li>
