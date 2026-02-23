@@ -121,7 +121,8 @@ export async function pollInboundDms(
 			// Skip our own messages
 			if (sender.did === botDid) continue;
 
-			// Skip if we've already seen this message
+			// Skip if we've already seen this message.
+			// Bluesky message IDs are TIDs (base32-encoded timestamps) — lexicographic order is correct.
 			if (sinceMessageId && msgId <= sinceMessageId) continue;
 
 			// Only handle regular text messages

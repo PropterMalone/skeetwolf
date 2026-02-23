@@ -4,6 +4,20 @@
  */
 import { AtpAgent } from '@atproto/api';
 
+const BLUESKY_MAX_GRAPHEMES = 300;
+
+/** Truncate text to Bluesky's 300-grapheme limit. Uses Intl.Segmenter for correct grapheme counting. */
+export function truncateToLimit(text: string, limit = BLUESKY_MAX_GRAPHEMES): string {
+	// Intl.Segmenter handles multi-byte characters and emoji correctly
+	const segmenter = new Intl.Segmenter('en', { granularity: 'grapheme' });
+	const segments = [...segmenter.segment(text)];
+	if (segments.length <= limit) return text;
+	return `${segments
+		.slice(0, limit - 1)
+		.map((s) => s.segment)
+		.join('')}…`;
+}
+
 export interface BotConfig {
 	identifier: string;
 	password: string;
@@ -26,7 +40,7 @@ export async function postMessage(
 	text: string,
 	labels?: string[],
 ): Promise<{ uri: string; cid: string }> {
-	const record: Record<string, unknown> = { text };
+	const record: Record<string, unknown> = { text: truncateToLimit(text) };
 	if (labels?.length) {
 		record.labels = {
 			$type: 'com.atproto.label.defs#selfLabels',
@@ -47,7 +61,7 @@ export async function replyToPost(
 	labels?: string[],
 ): Promise<{ uri: string; cid: string }> {
 	const record: Record<string, unknown> = {
-		text,
+		text: truncateToLimit(text),
 		reply: {
 			parent: { uri: parentUri, cid: parentCid },
 			root: { uri: rootUri, cid: rootCid },
@@ -119,7 +133,7 @@ export async function postWithQuote(
 	labels?: string[],
 ): Promise<{ uri: string; cid: string }> {
 	const record: Record<string, unknown> = {
-		text,
+		text: truncateToLimit(text),
 		embed: {
 			$type: 'app.bsky.embed.record',
 			record: { uri: quotedUri, cid: quotedCid },

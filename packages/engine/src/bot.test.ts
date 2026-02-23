@@ -5,6 +5,7 @@ import {
 	deletePostgate,
 	extractRkey,
 	postWithQuote,
+	truncateToLimit,
 } from './bot.js';
 
 describe('extractRkey', () => {
@@ -18,6 +19,30 @@ describe('extractRkey', () => {
 
 	it('throws on empty string', () => {
 		expect(() => extractRkey('')).toThrow('invalid AT URI');
+	});
+});
+
+describe('truncateToLimit', () => {
+	it('returns short text unchanged', () => {
+		expect(truncateToLimit('hello', 300)).toBe('hello');
+	});
+
+	it('truncates text exceeding limit', () => {
+		const text = 'a'.repeat(350);
+		const result = truncateToLimit(text, 300);
+		// 299 chars + ellipsis
+		expect([...new Intl.Segmenter('en', { granularity: 'grapheme' }).segment(result)]).toHaveLength(
+			300,
+		);
+		expect(result.endsWith('…')).toBe(true);
+	});
+
+	it('handles emoji graphemes correctly', () => {
+		// Each flag emoji is 1 grapheme but multiple code points
+		const flags = '🇺🇸'.repeat(150); // 150 graphemes
+		const result = truncateToLimit(flags, 100);
+		const segments = [...new Intl.Segmenter('en', { granularity: 'grapheme' }).segment(result)];
+		expect(segments.length).toBe(100);
 	});
 });
 
