@@ -63,6 +63,8 @@ describe('GameManager.findGameForPlayer', () => {
 		manager.signup('g1', 'did:plc:p2', 'p2.bsky.social');
 		manager.signup('g1', 'did:plc:p3', 'p3.bsky.social');
 		manager.signup('g1', 'did:plc:p4', 'p4.bsky.social');
+		manager.signup('g1', 'did:plc:p5', 'p5.bsky.social');
+		manager.signup('g1', 'did:plc:p6', 'p6.bsky.social');
 		await manager.startGame('g1');
 
 		const found = manager.findGameForPlayer('did:plc:p2');
@@ -142,7 +144,7 @@ describe('GameManager.nightActionByHandle', () => {
 		const dm = createMockDm();
 		const manager = new GameManager(createMockDb(), createMockAgent(), dm.sender);
 		await manager.newGame('g1');
-		for (let i = 0; i < 5; i++) {
+		for (let i = 0; i < 7; i++) {
 			manager.signup('g1', `did:plc:p${i}`, `player${i}.bsky.social`);
 		}
 		await manager.startGame('g1');

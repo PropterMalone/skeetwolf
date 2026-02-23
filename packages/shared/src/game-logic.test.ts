@@ -68,15 +68,14 @@ describe('addPlayer', () => {
 
 describe('assignRoles', () => {
 	it('assigns roles and transitions to active', () => {
-		const state = gameWithPlayers(6);
+		const state = gameWithPlayers(7);
 		const result = assignRoles(state, noShuffle);
 		expect(result.ok).toBe(true);
 		expect(result.state.status).toBe('active');
 
 		const roles = result.state.players.map((p) => p.role);
-		// 6 players with noShuffle: godfather, mafioso, cop, villager, villager, villager
-		// (doctor requires 7+ players)
-		expect(roles).toEqual(['godfather', 'mafioso', 'cop', 'villager', 'villager', 'villager']);
+		// 7 players with noShuffle: godfather, mafioso, cop, doctor, villager, villager, villager
+		expect(roles).toEqual(['godfather', 'mafioso', 'cop', 'doctor', 'villager', 'villager', 'villager']);
 	});
 
 	it('rejects with too few players', () => {
@@ -86,37 +85,37 @@ describe('assignRoles', () => {
 		expect(result.error).toContain('at least');
 	});
 
-	it('assigns 1 mafia for 5 players', () => {
-		const state = gameWithPlayers(5);
+	it('assigns 2 mafia for 7 players', () => {
+		const state = gameWithPlayers(7);
 		const result = assignRoles(state, noShuffle);
 		const mafiaCount = result.state.players.filter((p) => alignmentOf(p.role) === 'mafia').length;
-		expect(mafiaCount).toBe(1);
+		expect(mafiaCount).toBe(2);
 	});
 });
 
 describe('voting', () => {
-	function dayGameWith6(): GameState {
-		const state = gameWithPlayers(6);
+	function dayGameWith7(): GameState {
+		const state = gameWithPlayers(7);
 		const result = assignRoles(state, noShuffle);
 		return advancePhase(result.state); // Night 0 → Day 1
 	}
 
 	it('allows alive players to vote', () => {
-		const state = dayGameWith6();
+		const state = dayGameWith7();
 		const result = castVote(state, 'did:plc:player0', 'did:plc:player1');
 		expect(result.ok).toBe(true);
 		expect(result.state.votes).toHaveLength(1);
 	});
 
 	it('rejects votes during night', () => {
-		const state = gameWithPlayers(6);
+		const state = gameWithPlayers(7);
 		const active = assignRoles(state, noShuffle).state; // still Night 0
 		const result = castVote(active, 'did:plc:player0', 'did:plc:player1');
 		expect(result.ok).toBe(false);
 	});
 
 	it('replaces existing vote from same voter', () => {
-		let state = dayGameWith6();
+		let state = dayGameWith7();
 		state = castVote(state, 'did:plc:player0', 'did:plc:player1').state;
 		state = castVote(state, 'did:plc:player0', 'did:plc:player2').state;
 		expect(state.votes).toHaveLength(1);
@@ -124,8 +123,8 @@ describe('voting', () => {
 	});
 
 	it('tallies majority correctly', () => {
-		let state = dayGameWith6();
-		// 6 alive, majority = 4
+		let state = dayGameWith7();
+		// 7 alive, majority = 4
 		state = castVote(state, 'did:plc:player0', 'did:plc:player5').state;
 		state = castVote(state, 'did:plc:player1', 'did:plc:player5').state;
 		state = castVote(state, 'did:plc:player2', 'did:plc:player5').state;
@@ -225,21 +224,22 @@ describe('night actions', () => {
 
 describe('win conditions', () => {
 	it('town wins when all mafia dead', () => {
-		const state = gameWithPlayers(5);
+		const state = gameWithPlayers(7);
 		const game = assignRoles(state, noShuffle).state;
-		// Kill the godfather (player0)
-		const afterKill = eliminatePlayer(game, 'did:plc:player0');
+		// Kill both mafia: godfather (player0) and mafioso (player1)
+		let afterKill = eliminatePlayer(game, 'did:plc:player0');
+		afterKill = eliminatePlayer(afterKill, 'did:plc:player1');
 		expect(checkWinCondition(afterKill)).toBe('town');
 	});
 
 	it('mafia wins when they equal town', () => {
-		const state = gameWithPlayers(5);
+		const state = gameWithPlayers(7);
 		const game = assignRoles(state, noShuffle).state;
-		// 5 players with noShuffle: godfather, cop, doctor, villager, villager
-		// Kill 3 townies → 1 mafia, 1 town → mafia wins
-		let g = eliminatePlayer(game, 'did:plc:player1');
-		g = eliminatePlayer(g, 'did:plc:player2');
+		// 7 players with noShuffle: godfather(0), mafioso(1), cop(2), doctor(3), villager(4,5,6)
+		// Kill 3 townies → 2 mafia, 2 town → mafia wins
+		let g = eliminatePlayer(game, 'did:plc:player2');
 		g = eliminatePlayer(g, 'did:plc:player3');
+		g = eliminatePlayer(g, 'did:plc:player4');
 		expect(checkWinCondition(g)).toBe('mafia');
 	});
 
@@ -265,7 +265,7 @@ describe('phase transitions', () => {
 	});
 
 	it('clears votes and actions on phase change', () => {
-		let state = gameWithPlayers(6);
+		let state = gameWithPlayers(7);
 		state = assignRoles(state, noShuffle).state;
 		state = submitNightAction(state, {
 			actor: 'did:plc:player0',
@@ -289,7 +289,7 @@ describe('phase transitions', () => {
 
 describe('phase timers', () => {
 	it('returns deadline based on phase duration', () => {
-		let state = gameWithPlayers(6);
+		let state = gameWithPlayers(7);
 		state = assignRoles(state, noShuffle).state;
 		// Night phase — deadline = phaseStartedAt + nightDurationMs
 		const deadline = getPhaseDeadline(state);
@@ -302,7 +302,7 @@ describe('phase timers', () => {
 	});
 
 	it('detects expired phase', () => {
-		let state = gameWithPlayers(6);
+		let state = gameWithPlayers(7);
 		state = assignRoles(state, noShuffle).state;
 		// Force phaseStartedAt to the past
 		state = { ...state, phaseStartedAt: Date.now() - state.config.nightDurationMs - 1 };
@@ -310,14 +310,14 @@ describe('phase timers', () => {
 	});
 
 	it('does not expire before deadline', () => {
-		let state = gameWithPlayers(6);
+		let state = gameWithPlayers(7);
 		state = assignRoles(state, noShuffle).state;
 		// Just started
 		expect(isPhaseExpired(state, Date.now())).toBe(false);
 	});
 
 	it('uses day duration for day phase', () => {
-		let state = gameWithPlayers(6);
+		let state = gameWithPlayers(7);
 		state = assignRoles(state, noShuffle).state;
 		state = advancePhase(state); // Night 0 → Day 1
 		const deadline = getPhaseDeadline(state);

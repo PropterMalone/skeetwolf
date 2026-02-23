@@ -75,8 +75,8 @@ export interface GameConfig {
 }
 
 export const DEFAULT_CONFIG: GameConfig = {
-	minPlayers: 5,
-	maxPlayers: 15,
+	minPlayers: 7,
+	maxPlayers: 7,
 	dayDurationMs: 24 * 60 * 60 * 1000, // 24 hours
 	nightDurationMs: 12 * 60 * 60 * 1000, // 12 hours
 	signupDurationMs: 24 * 60 * 60 * 1000, // 24 hours

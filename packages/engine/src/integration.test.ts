@@ -149,7 +149,7 @@ describe('engine → feed integration', () => {
 		await manager.newGame('game-b');
 
 		// Signup + start both
-		for (let i = 0; i < 5; i++) {
+		for (let i = 0; i < 7; i++) {
 			manager.signup('game-a', `did:plc:a${i}`, `alice${i}.bsky.social`);
 			manager.signup('game-b', `did:plc:b${i}`, `bob${i}.bsky.social`);
 		}
@@ -194,7 +194,7 @@ describe('engine → feed integration', () => {
 		const manager = new GameManager(db, agent, dm.sender);
 
 		await manager.newGame('pag1');
-		for (let i = 0; i < 5; i++) {
+		for (let i = 0; i < 7; i++) {
 			manager.signup('pag1', `did:plc:p${i}`, `player${i}.bsky.social`);
 		}
 		await manager.startGame('pag1');
@@ -243,7 +243,7 @@ describe('engine → feed integration', () => {
 		const manager = new GameManager(db, agent, dm.sender);
 
 		await manager.newGame('kinds1');
-		for (let i = 0; i < 5; i++) {
+		for (let i = 0; i < 7; i++) {
 			manager.signup('kinds1', `did:plc:p${i}`, `player${i}.bsky.social`);
 		}
 		await manager.startGame('kinds1');
@@ -335,9 +335,10 @@ describe('full game flow', () => {
 	});
 
 	it('town wins — full game to completion', async () => {
-		// 5 players: 1 godfather + 4 villagers (no power roles at 5)
-		const { manager, state } = await setupGame(db, 'tw1', 5);
+		// 7 players: godfather, mafioso, cop, doctor, 3 villagers
+		const { manager, state } = await setupGame(db, 'tw1', 7);
 		const godfather = findByRole(state.players, 'godfather');
+		const mafioso = findByRole(state.players, 'mafioso');
 		const townPlayers = findAllByAlignment(state.players, 'town');
 		const firstVictim = must(townPlayers[0], 'first town player');
 
@@ -353,6 +354,23 @@ describe('full game flow', () => {
 		}
 		await manager.endDay('tw1');
 
+		// Night 1: mafioso kills another townie
+		const gameNight1 = mustLoadGame(db, 'tw1');
+		const secondVictim = must(
+			gameNight1.players.find((p) => alignmentOf(p.role) === 'town' && p.alive),
+			'second town victim',
+		);
+		manager.nightAction('tw1', { actor: mafioso.did, kind: 'kill', target: secondVictim.did });
+		await manager.endNight('tw1');
+
+		// Day 2: town votes out the mafioso
+		const gameDay2 = mustLoadGame(db, 'tw1');
+		const aliveDay2 = gameDay2.players.filter((p) => alignmentOf(p.role) === 'town' && p.alive);
+		for (const p of aliveDay2) {
+			manager.vote('tw1', p.did, mafioso.did);
+		}
+		await manager.endDay('tw1');
+
 		// Verify game finished with town win
 		const final = mustLoadGame(db, 'tw1');
 		expect(final.winner).toBe('town');
@@ -363,8 +381,8 @@ describe('full game flow', () => {
 	});
 
 	it('mafia wins — full game to completion', async () => {
-		// 5 players: 1 godfather + 4 villagers
-		const { manager, state } = await setupGame(db, 'mw1', 5);
+		// 7 players: godfather, mafioso, cop, doctor, 3 villagers
+		const { manager, state } = await setupGame(db, 'mw1', 7);
 		const godfather = findByRole(state.players, 'godfather');
 		let townPlayers = findAllByAlignment(state.players, 'town');
 
@@ -399,7 +417,7 @@ describe('full game flow', () => {
 	});
 
 	it('night kill produces death post', async () => {
-		const { manager, state } = await setupGame(db, 'nk1', 5);
+		const { manager, state } = await setupGame(db, 'nk1', 7);
 		const godfather = findByRole(state.players, 'godfather');
 		const victim = must(findAllByAlignment(state.players, 'town')[0], 'town victim');
 
@@ -464,7 +482,7 @@ describe('full game flow', () => {
 	});
 
 	it('no-majority day — no elimination', async () => {
-		const { manager, state } = await setupGame(db, 'nm1', 5);
+		const { manager, state } = await setupGame(db, 'nm1', 7);
 
 		// End night first to get to day
 		await manager.endNight('nm1');
@@ -488,7 +506,7 @@ describe('full game flow', () => {
 	});
 
 	it('phase timer expiry via tick()', async () => {
-		await setupGame(db, 'pt1', 5);
+		await setupGame(db, 'pt1', 7);
 
 		// Game starts in Night 0. Force phaseStartedAt far in the past.
 		const state = mustLoadGame(db, 'pt1');
