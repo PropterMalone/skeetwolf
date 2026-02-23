@@ -12,6 +12,7 @@ import {
 	type NightAction,
 	type NightActionKind,
 	type PublicQueue,
+	DEFAULT_CONFIG,
 	addInviteSlot,
 	addPlayer,
 	addToQueue,
@@ -485,7 +486,7 @@ export class GameManager {
 		const entry = result.queue.entries.find((e) => e.did === did)!;
 		saveQueueEntry(this.db, entry);
 
-		const minPlayers = 5; // TODO: make configurable
+		const { minPlayers } = DEFAULT_CONFIG;
 		const count = this.publicQueue.entries.length;
 		await this.replyNoGame(
 			`You're in the queue (${count}/${minPlayers}). Game starts when the queue fills.`,
@@ -501,7 +502,7 @@ export class GameManager {
 	/** Report queue status */
 	async queueStatus(replyUri: string, replyCid: string): Promise<void> {
 		const entries = this.publicQueue.entries;
-		const minPlayers = 5; // TODO: make configurable
+		const { minPlayers } = DEFAULT_CONFIG;
 		if (entries.length === 0) {
 			await this.replyNoGame(`Queue is empty (need ${minPlayers} to start)`, replyUri, replyCid);
 		} else {

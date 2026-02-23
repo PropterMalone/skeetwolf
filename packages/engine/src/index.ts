@@ -169,7 +169,7 @@ async function handleMention(
 			} else {
 				const game = manager.getGame(cmd.gameId);
 				const count = game?.players.length ?? 0;
-				const min = game?.config.minPlayers ?? 5;
+				const min = game?.config.minPlayers ?? 7;
 				console.log(`${authorHandle} joined game ${cmd.gameId}`);
 				await manager.reply(
 					cmd.gameId,
