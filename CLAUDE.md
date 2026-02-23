@@ -1,8 +1,8 @@
-# Skeetwolf: Forum Mafia on ATProto
+# Skeetwolf: Forum Werewolf on ATProto
 
 ## Project Purpose
 
-Moderatorless Werewolf/Mafia game played through Bluesky. An automated bot manages game state, role assignment, phase transitions, and announcements. Players interact via Bluesky posts (public discussion, voting) and DMs (role assignment, night actions, mafia coordination).
+Moderatorless Werewolf game played through Bluesky. An automated bot manages game state, role assignment, phase transitions, and announcements. Players interact via Bluesky posts (public discussion, voting) and DMs (role assignment, night actions, mafia coordination).
 
 ## Technology Stack
 

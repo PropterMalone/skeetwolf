@@ -27,9 +27,9 @@ export const FAQ_HTML = `<!DOCTYPE html>
 </head>
 <body>
 
-<h1>🐺 Skeetwolf <span>Forum Mafia on Bluesky</span></h1>
+<h1>🐺 Skeetwolf <span>Forum Werewolf on Bluesky</span></h1>
 
-<p>Skeetwolf is an automated <a href="https://en.wikipedia.org/wiki/Mafia_(party_game)">Werewolf/Mafia</a> game played through Bluesky posts and DMs. No moderator needed — the bot handles everything.</p>
+<p>Skeetwolf is an automated <a href="https://en.wikipedia.org/wiki/Mafia_(party_game)">Werewolf</a> game played through Bluesky posts and DMs. No moderator needed — the bot handles everything.</p>
 
 <h2>Quick Start</h2>
 <ul>

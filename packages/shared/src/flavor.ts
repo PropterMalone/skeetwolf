@@ -38,6 +38,9 @@ export interface FlavorPack {
 	/** Night start DM */
 	nightStart: string[];
 
+	/** Night 0 guidance — role-specific. Sent after role DMs. */
+	night0Guidance: Record<Role, string[]>;
+
 	/** Game start announcement */
 	gameStart: string[];
 }
@@ -180,6 +183,34 @@ export const DEFAULT_FLAVOR: FlavorPack = {
 		'The feed goes quiet. Somewhere in the dark, the wolves are planning. Power roles: DM your actions.',
 		'Notifications go silent. The night belongs to the wolves — and those brave enough to act in the dark.',
 	],
+
+	night0Guidance: {
+		villager: [
+			"It's Night 0 — nothing for you to do yet. The power roles are making their moves. Day 1 starts once they're done.",
+			'Night 0 is just setup. Sit tight while the power roles submit their actions. Day 1 is coming.',
+			"Hang tight — Night 0 is for power roles only. You'll get your chance to post and vote when day breaks.",
+		],
+		cop: [
+			"It's Night 0 — DM me a handle to investigate. Day 1 starts once all night actions are in.",
+			'Night 0: time to do some digging. DM me someone to investigate. The sooner you act, the sooner day begins.',
+			"The game starts in the dark. DM me who you want to investigate — once you do, we're one step closer to Day 1.",
+		],
+		doctor: [
+			"It's Night 0 — no kill tonight, so your protection isn't needed yet. Sit tight until Day 1.",
+			"Night 0: the wolves can't kill yet, so there's no one to save. Relax — Day 1 is coming soon.",
+			'Nothing to do tonight, doc. No kill on Night 0 means no one needs saving. Day 1 starts once the other roles finish up.',
+		],
+		godfather: [
+			"It's Night 0 — no kill tonight. Use this time to coordinate with your team. Day 1 starts once all night actions are in.",
+			'Night 0: no kill yet, but the relay is open. Talk strategy with your team. Day 1 is coming.',
+			"The wolves can't hunt on Night 0. Get to know your team through the relay. The real game starts at dawn.",
+		],
+		mafioso: [
+			"It's Night 0 — no kill tonight. Use the relay to coordinate with your team. Day 1 starts soon.",
+			'Night 0: no hunting yet. Chat with your teammates through the bot relay. Day 1 is on the way.',
+			"Can't make a move tonight — Night 0 is just for setup. Use the relay to plan with your pack.",
+		],
+	},
 
 	gameStart: [
 		'The game is afoot. Check your DMs for your role.',
