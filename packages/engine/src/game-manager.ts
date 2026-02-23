@@ -202,7 +202,8 @@ export class GameManager {
 			const roleText = flavor(f.roleAssignment[player.role as Role], {
 				teammates: teammates ?? '',
 			});
-			let message = `🐺 Skeetwolf Game #${gameId}\n\n${roleText}`;
+			const playerList = game.players.map((p) => `@${p.handle}`).join(', ');
+			let message = `🐺 Skeetwolf Game #${gameId}\n\nPlayers: ${playerList}\n\n${roleText}`;
 			if (teammates) {
 				message += `\nYour mafia teammates: ${teammates}`;
 			}
@@ -229,12 +230,9 @@ export class GameManager {
 			);
 		}
 
-		// DM all players that Night 0 has started (no public post)
+		// DM all players Night 0 guidance (role-specific, no public post)
 		for (const player of game.players) {
-			await this.dm.sendDm(
-				player.did,
-				`${flavor(f.nightStart)} Night ends in ${formatDuration(game.config.nightDurationMs)}.`,
-			);
+			await this.dm.sendDm(player.did, flavor(f.night0Guidance[player.role as Role]));
 		}
 	}
 

@@ -490,7 +490,9 @@ describe('full game flow', () => {
 		});
 		await manager.endNight('ci1');
 
-		const copDms = dm.sent.filter((m) => m.did === cop.did && m.text.includes(godfather.handle));
+		const copDms = dm.sent.filter(
+			(m) => m.did === cop.did && m.text.includes(godfather.handle) && /TOWN|MAFIA/.test(m.text),
+		);
 		expect(copDms).toHaveLength(1);
 		expect(must(copDms[0], 'cop DM').text).toContain('TOWN');
 	});
@@ -503,7 +505,9 @@ describe('full game flow', () => {
 		await manager.nightAction('ci2', { actor: cop.did, kind: 'investigate', target: mafioso.did });
 		await manager.endNight('ci2');
 
-		const copDms = dm.sent.filter((m) => m.did === cop.did && m.text.includes(mafioso.handle));
+		const copDms = dm.sent.filter(
+			(m) => m.did === cop.did && m.text.includes(mafioso.handle) && /TOWN|MAFIA/.test(m.text),
+		);
 		expect(copDms).toHaveLength(1);
 		expect(must(copDms[0], 'cop DM').text).toContain('MAFIA');
 	});
