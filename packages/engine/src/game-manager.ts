@@ -193,6 +193,10 @@ export class GameManager {
 			if (teammates) {
 				message += `\nYour mafia teammates: ${teammates}`;
 			}
+			const faqUrl = process.env['FAQ_URL'];
+			if (faqUrl) {
+				message += `\n\nHow to play: ${faqUrl}`;
+			}
 
 			await this.dm.sendDm(player.did, message);
 		}
