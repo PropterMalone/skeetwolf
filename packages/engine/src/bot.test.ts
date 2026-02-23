@@ -1,8 +1,10 @@
 import { describe, expect, it, vi } from 'vitest';
 import {
+	createDayThreadgate,
 	createPostgate,
 	createThreadgate,
 	deletePostgate,
+	deleteThreadgate,
 	extractRkey,
 	postWithQuote,
 	truncateToLimit,
@@ -46,11 +48,23 @@ describe('truncateToLimit', () => {
 	});
 });
 
+/** Minimal agent mock with identity resolver for RichText.detectFacets */
+function mockAgent(postResult = { uri: 'at://bot/post/1', cid: 'cid-1' }) {
+	return {
+		post: vi.fn().mockResolvedValue(postResult),
+		com: {
+			atproto: {
+				identity: {
+					resolveHandle: vi.fn().mockResolvedValue({ data: { did: 'did:plc:resolved' } }),
+				},
+			},
+		},
+	};
+}
+
 describe('postWithQuote', () => {
 	it('posts with quote embed and labels', async () => {
-		const agent = {
-			post: vi.fn().mockResolvedValue({ uri: 'at://bot/post/1', cid: 'cid-1' }),
-		};
+		const agent = mockAgent();
 
 		// biome-ignore lint/suspicious/noExplicitAny: test mock
 		const result = await postWithQuote(agent as any, 'Day 2!', 'at://prev/post/1', 'cid-prev', [
@@ -68,15 +82,24 @@ describe('postWithQuote', () => {
 	});
 
 	it('posts without labels when none provided', async () => {
-		const agent = {
-			post: vi.fn().mockResolvedValue({ uri: 'at://bot/post/1', cid: 'cid-1' }),
-		};
+		const agent = mockAgent();
 
 		// biome-ignore lint/suspicious/noExplicitAny: test mock
 		await postWithQuote(agent as any, 'text', 'at://x/y/z', 'cid-x');
 
 		const call = agent.post.mock.calls[0]?.[0];
 		expect(call.labels).toBeUndefined();
+	});
+
+	it('includes facets when text contains mentions', async () => {
+		const agent = mockAgent();
+
+		// biome-ignore lint/suspicious/noExplicitAny: test mock
+		await postWithQuote(agent as any, 'Hey @alice.bsky.social!', 'at://x/y/z', 'cid-x');
+
+		const call = agent.post.mock.calls[0]?.[0];
+		expect(call.facets).toBeDefined();
+		expect(call.facets.length).toBeGreaterThan(0);
 	});
 });
 
@@ -140,5 +163,56 @@ describe('deletePostgate', () => {
 		const arg = deleteRecord.mock.calls[0]?.[0];
 		expect(arg.collection).toBe('app.bsky.feed.postgate');
 		expect(arg.rkey).toBe('abc');
+	});
+});
+
+describe('createDayThreadgate', () => {
+	it('creates a threadgate with mentionRule', async () => {
+		const createRecord = vi.fn().mockResolvedValue({});
+		const agent = {
+			session: { did: 'did:plc:bot' },
+			api: { com: { atproto: { repo: { createRecord } } } },
+		};
+
+		// biome-ignore lint/suspicious/noExplicitAny: test mock
+		await createDayThreadgate(agent as any, 'at://did:plc:bot/app.bsky.feed.post/day1');
+
+		expect(createRecord).toHaveBeenCalledOnce();
+		const arg = createRecord.mock.calls[0]?.[0];
+		expect(arg.collection).toBe('app.bsky.feed.threadgate');
+		expect(arg.rkey).toBe('day1');
+		expect(arg.record.allow).toEqual([{ $type: 'app.bsky.feed.threadgate#mentionRule' }]);
+	});
+
+	it('throws without active session', async () => {
+		const agent = { session: null, api: { com: { atproto: { repo: { createRecord: vi.fn() } } } } };
+		// biome-ignore lint/suspicious/noExplicitAny: test mock
+		await expect(createDayThreadgate(agent as any, 'at://x/y/z')).rejects.toThrow(
+			'no active session',
+		);
+	});
+});
+
+describe('deleteThreadgate', () => {
+	it('deletes a threadgate record by rkey', async () => {
+		const deleteRecord = vi.fn().mockResolvedValue({});
+		const agent = {
+			session: { did: 'did:plc:bot' },
+			api: { com: { atproto: { repo: { deleteRecord } } } },
+		};
+
+		// biome-ignore lint/suspicious/noExplicitAny: test mock
+		await deleteThreadgate(agent as any, 'at://did:plc:bot/app.bsky.feed.post/day1');
+
+		expect(deleteRecord).toHaveBeenCalledOnce();
+		const arg = deleteRecord.mock.calls[0]?.[0];
+		expect(arg.collection).toBe('app.bsky.feed.threadgate');
+		expect(arg.rkey).toBe('day1');
+	});
+
+	it('throws without active session', async () => {
+		const agent = { session: null, api: { com: { atproto: { repo: { deleteRecord: vi.fn() } } } } };
+		// biome-ignore lint/suspicious/noExplicitAny: test mock
+		await expect(deleteThreadgate(agent as any, 'at://x/y/z')).rejects.toThrow('no active session');
 	});
 });

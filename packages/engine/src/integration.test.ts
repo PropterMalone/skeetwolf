@@ -36,6 +36,13 @@ function createMockAgent(): any {
 				},
 			},
 		},
+		com: {
+			atproto: {
+				identity: {
+					resolveHandle: vi.fn().mockResolvedValue({ data: { did: 'did:plc:resolved' } }),
+				},
+			},
+		},
 	};
 }
 
