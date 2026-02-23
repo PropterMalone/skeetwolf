@@ -81,13 +81,12 @@ const POST_KIND_LABELS: Record<PostKind, string[]> = {
 /** Night 0 check interval — only evaluate early end on hourly boundaries to avoid leaking action timing. */
 const NIGHT_0_CHECK_INTERVAL_MS = 60 * 60 * 1000; // 1 hour
 
-/** Check if all valid Night 0 actions have been submitted (cop + doctor; no kill). */
+/** Check if all meaningful Night 0 actions are in. Only cop matters — doctor protect is
+ *  a no-op (no kill to block) and we don't want to force a pointless action. */
 function allNight0ActionsIn(state: GameState): boolean {
-	const hasInvestigate = state.nightActions.some((a) => a.kind === 'investigate');
-	const hasProtect = state.nightActions.some((a) => a.kind === 'protect');
 	const hasCop = state.players.some((p) => p.role === 'cop' && p.alive);
-	const hasDoctor = state.players.some((p) => p.role === 'doctor' && p.alive);
-	return (!hasCop || hasInvestigate) && (!hasDoctor || hasProtect);
+	const hasInvestigate = state.nightActions.some((a) => a.kind === 'investigate');
+	return !hasCop || hasInvestigate;
 }
 
 export class GameManager {
