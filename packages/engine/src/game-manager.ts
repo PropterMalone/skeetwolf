@@ -78,8 +78,8 @@ const POST_KIND_LABELS: Record<PostKind, string[]> = {
 	day_thread: ['skeetwolf', 'game-day-thread'],
 };
 
-/** Minimum time Night 0 runs before auto-advancing (avoids leaking action timing). */
-const NIGHT_0_MIN_DURATION_MS = 60 * 60 * 1000; // 1 hour
+/** Night 0 check interval — only evaluate early end on hourly boundaries to avoid leaking action timing. */
+const NIGHT_0_CHECK_INTERVAL_MS = 60 * 60 * 1000; // 1 hour
 
 /** Check if all valid Night 0 actions have been submitted (cop + doctor; no kill). */
 function allNight0ActionsIn(state: GameState): boolean {
@@ -94,6 +94,8 @@ export class GameManager {
 	private games = new Map<GameId, GameState>();
 	/** Maps relay group ID → member DIDs (mirrors what DmSender tracks internally) */
 	private mafiaRelayIds = new Map<GameId, string>();
+	/** Tracks which hourly boundary we last checked for Night 0 auto-advance */
+	private night0LastCheckedHour = new Map<GameId, number>();
 	private publicQueue: PublicQueue = createQueue();
 	private inviteGames = new Map<GameId, InviteGame>();
 
@@ -562,17 +564,21 @@ export class GameManager {
 			}
 		}
 
-		// Night 0 early end: once all valid actions are in and minimum wait has passed
+		// Night 0 early end: check on hourly boundaries only (not on every tick)
+		// to avoid leaking when a player submitted their action.
 		for (const [id, state] of this.games) {
-			if (
-				state.status === 'active' &&
-				state.phase.kind === 'night' &&
-				state.phase.number === 0 &&
-				allNight0ActionsIn(state) &&
-				now - state.phaseStartedAt >= NIGHT_0_MIN_DURATION_MS
-			) {
-				console.log(`Night 0 auto-advancing for game ${id} (all actions in)`);
+			if (state.status !== 'active' || state.phase.kind !== 'night' || state.phase.number !== 0) {
+				continue;
+			}
+			const elapsed = now - state.phaseStartedAt;
+			const hoursPassed = Math.floor(elapsed / NIGHT_0_CHECK_INTERVAL_MS);
+			const lastCheckedHour = this.night0LastCheckedHour.get(id) ?? 0;
+			if (hoursPassed <= lastCheckedHour) continue;
+			this.night0LastCheckedHour.set(id, hoursPassed);
+			if (allNight0ActionsIn(state)) {
+				console.log(`Night 0 auto-advancing for game ${id} (all actions in, hour ${hoursPassed})`);
 				await this.endNight(id);
+				this.night0LastCheckedHour.delete(id);
 			}
 		}
 	}
