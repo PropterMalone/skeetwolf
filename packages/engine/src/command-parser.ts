@@ -152,7 +152,7 @@ function extractGameId(lower: string): string | undefined {
 /** Extract all @handles from text (excluding the bot handle if already stripped) */
 function extractHandles(text: string): string[] {
 	const matches = text.matchAll(/@([\w.:-]+)/g);
-	return [...matches].map((m) => m[1]);
+	return [...matches].map((m) => m[1]).filter((h): h is string => h !== undefined);
 }
 
 function escapeRegex(s: string): string {
