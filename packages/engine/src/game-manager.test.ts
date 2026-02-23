@@ -13,13 +13,24 @@ function createMockAgent(): any {
 				cid: `cid-mock-${postCounter}`,
 			});
 		}),
-		session: { did: 'did:plc:bot' },
+		session: { did: 'did:plc:bot', handle: 'skeetwolf.bsky.social' },
 		api: {
 			com: {
 				atproto: {
 					repo: {
 						createRecord: vi.fn().mockResolvedValue({}),
 						deleteRecord: vi.fn().mockResolvedValue({}),
+					},
+				},
+			},
+			app: {
+				bsky: {
+					feed: {
+						getPostThread: vi.fn().mockResolvedValue({
+							data: {
+								thread: { $type: 'app.bsky.feed.defs#threadViewPost', post: {}, replies: [] },
+							},
+						}),
 					},
 				},
 			},
@@ -485,7 +496,7 @@ describe('GameManager hourly vote count via tick', () => {
 		postCounter = 0;
 	});
 
-	it('posts vote count after 1 hour of day phase', async () => {
+	it('skips hourly auto-post when no votes have been cast', async () => {
 		const dm = createMockDm();
 		const mockAgent = createMockAgent();
 		const manager = new GameManager(createMockDb(), mockAgent, dm.sender);
@@ -498,6 +509,33 @@ describe('GameManager hourly vote count via tick', () => {
 
 		const game = manager.getGame('g1');
 		if (!game) throw new Error('expected game');
+
+		const postsBefore = mockAgent.post.mock.calls.length;
+
+		// Tick at 61 min with no votes — should NOT post
+		await manager.tick(game.phaseStartedAt + 61 * 60 * 1000);
+		expect(mockAgent.post.mock.calls.length).toBe(postsBefore);
+	});
+
+	it('posts vote count after 1 hour when votes exist', async () => {
+		const dm = createMockDm();
+		const mockAgent = createMockAgent();
+		const manager = new GameManager(createMockDb(), mockAgent, dm.sender);
+		await manager.newGame('g1');
+		for (let i = 0; i < 7; i++) {
+			manager.signup('g1', `did:plc:p${i}`, `player${i}.bsky.social`);
+		}
+		await manager.startGame('g1');
+		await manager.endNight('g1');
+
+		const game = manager.getGame('g1');
+		if (!game) throw new Error('expected game');
+
+		// Cast a vote so the auto-post has something to report
+		const alive = game.players.filter((p) => p.alive);
+		const voter = alive[0] as (typeof alive)[0];
+		const target = alive[1] as (typeof alive)[0];
+		manager.vote('g1', voter.did, target.did);
 
 		const postsBefore = mockAgent.post.mock.calls.length;
 
@@ -514,6 +552,105 @@ describe('GameManager hourly vote count via tick', () => {
 		// Tick again at 61 min — no duplicate
 		await manager.tick(game.phaseStartedAt + 61 * 60 * 1000);
 		expect(mockAgent.post.mock.calls.length).toBe(postsBefore + 1);
+	});
+});
+
+describe('GameManager.rehydrateVotes on hydrate', () => {
+	beforeEach(() => {
+		postCounter = 0;
+	});
+
+	it('rebuilds votes from thread replies on hydrate', async () => {
+		const dm = createMockDm();
+		const mockAgent = createMockAgent();
+		const manager = new GameManager(createMockDb(), mockAgent, dm.sender);
+		await manager.newGame('g1');
+		for (let i = 0; i < 7; i++) {
+			manager.signup('g1', `did:plc:p${i}`, `player${i}.bsky.social`);
+		}
+		await manager.startGame('g1');
+		await manager.endNight('g1');
+
+		const game = manager.getGame('g1');
+		if (!game) throw new Error('expected game');
+		expect(game.phase.kind).toBe('day');
+		expect(game.votes).toHaveLength(0);
+
+		const alive = game.players.filter((p) => p.alive);
+		const target = alive[0] as (typeof alive)[0];
+		const voter1 = alive[1] as (typeof alive)[0];
+		const voter2 = alive[2] as (typeof alive)[0];
+
+		// Simulate thread replies with vote commands
+		mockAgent.api.app.bsky.feed.getPostThread.mockResolvedValue({
+			data: {
+				thread: {
+					$type: 'app.bsky.feed.defs#threadViewPost',
+					post: {},
+					replies: [
+						{
+							$type: 'app.bsky.feed.defs#threadViewPost',
+							post: {
+								uri: 'at://voter1/post/1',
+								author: { did: voter1.did, handle: voter1.handle },
+								record: { text: `@skeetwolf.bsky.social vote @${target.handle}` },
+							},
+						},
+						{
+							$type: 'app.bsky.feed.defs#threadViewPost',
+							post: {
+								uri: 'at://voter2/post/2',
+								author: { did: voter2.did, handle: voter2.handle },
+								record: { text: `@skeetwolf.bsky.social vote @${target.handle}` },
+							},
+						},
+						// Bot's own post — should be skipped
+						{
+							$type: 'app.bsky.feed.defs#threadViewPost',
+							post: {
+								uri: 'at://bot/post/3',
+								author: { did: 'did:plc:bot', handle: 'skeetwolf.bsky.social' },
+								record: { text: 'Vote recorded' },
+							},
+						},
+					],
+				},
+			},
+		});
+
+		// Create a second manager and hydrate — simulates restart
+		const manager2 = new GameManager(createMockDb(), mockAgent, dm.sender);
+		// Manually set the game so hydrate's DB load finds it
+		// (mock DB doesn't actually persist, so we poke it in)
+		manager2.getGame; // just to reference manager2
+		// Instead: directly test via the same manager re-hydrating
+		// We need the DB mock to return the game. Let's use the real approach:
+		// clear in-memory votes and re-hydrate from thread.
+
+		// Wipe votes from state to simulate lost state
+		const wiped = { ...game, votes: [] };
+		const mockDb = createMockDb();
+		// Make loadActiveGames return our wiped game
+		mockDb.prepare = vi.fn().mockReturnValue({
+			run: vi.fn(),
+			get: vi.fn(),
+			all: vi.fn().mockReturnValue([{ id: 'g1', state: JSON.stringify(wiped) }]),
+		});
+		mockDb.pragma = vi.fn();
+		mockDb.exec = vi.fn();
+
+		const manager3 = new GameManager(mockDb, mockAgent, dm.sender);
+		await manager3.hydrate();
+
+		const rehydrated = manager3.getGame('g1');
+		expect(rehydrated).not.toBeNull();
+		expect(rehydrated?.votes).toHaveLength(2);
+		expect(rehydrated?.votes.some((v) => v.voter === voter1.did && v.target === target.did)).toBe(
+			true,
+		);
+		expect(rehydrated?.votes.some((v) => v.voter === voter2.did && v.target === target.did)).toBe(
+			true,
+		);
 	});
 });
 
