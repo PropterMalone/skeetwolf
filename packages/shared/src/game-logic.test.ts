@@ -147,11 +147,50 @@ describe('voting', () => {
 });
 
 describe('night actions', () => {
-	function nightGame(): GameState {
+	// Roles with noShuffle: godfather(0), mafioso(1), cop(2), doctor(3), villager(4,5,6)
+	function night0Game(): GameState {
 		const state = gameWithPlayers(7);
 		return assignRoles(state, noShuffle).state; // Night 0, active
-		// Roles: godfather, mafioso, cop, doctor, villager, villager, villager
 	}
+
+	/** Night 1 game — advance past Night 0 and Day 1 so kills are allowed */
+	function nightGame(): GameState {
+		let state = night0Game();
+		state = advancePhase(state); // Night 0 → Day 1
+		state = advancePhase(state); // Day 1 → Night 1
+		return state;
+	}
+
+	it('rejects kill on Night 0', () => {
+		const state = night0Game();
+		const result = submitNightAction(state, {
+			actor: 'did:plc:player0', // godfather
+			kind: 'kill',
+			target: 'did:plc:player4',
+		});
+		expect(result.ok).toBe(false);
+		expect(result.error).toContain('Night 0');
+	});
+
+	it('allows cop investigate on Night 0', () => {
+		const state = night0Game();
+		const result = submitNightAction(state, {
+			actor: 'did:plc:player2', // cop
+			kind: 'investigate',
+			target: 'did:plc:player0',
+		});
+		expect(result.ok).toBe(true);
+	});
+
+	it('allows doctor protect on Night 0', () => {
+		const state = night0Game();
+		const result = submitNightAction(state, {
+			actor: 'did:plc:player3', // doctor
+			kind: 'protect',
+			target: 'did:plc:player4',
+		});
+		expect(result.ok).toBe(true);
+	});
 
 	it('allows mafia to submit kill', () => {
 		const state = nightGame();
@@ -286,10 +325,11 @@ describe('phase transitions', () => {
 	it('clears votes and actions on phase change', () => {
 		let state = gameWithPlayers(7);
 		state = assignRoles(state, noShuffle).state;
+		// Use investigate (allowed on Night 0) to test action clearing
 		state = submitNightAction(state, {
-			actor: 'did:plc:player0',
-			kind: 'kill',
-			target: 'did:plc:player4',
+			actor: 'did:plc:player2', // cop
+			kind: 'investigate',
+			target: 'did:plc:player0',
 		}).state;
 		expect(state.nightActions).toHaveLength(1);
 

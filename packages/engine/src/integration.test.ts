@@ -347,11 +347,7 @@ describe('full game flow', () => {
 		const { manager, state } = await setupGame(db, 'tw1', 7);
 		const godfather = findByRole(state.players, 'godfather');
 		const mafioso = findByRole(state.players, 'mafioso');
-		const townPlayers = findAllByAlignment(state.players, 'town');
-		const firstVictim = must(townPlayers[0], 'first town player');
-
-		// Night 0: godfather kills a townie
-		manager.nightAction('tw1', { actor: godfather.did, kind: 'kill', target: firstVictim.did });
+		// Night 0: no kill allowed, just advance
 		await manager.endNight('tw1');
 
 		// Day 1: town votes out the godfather
@@ -362,7 +358,7 @@ describe('full game flow', () => {
 		}
 		await manager.endDay('tw1');
 
-		// Night 1: mafioso kills another townie
+		// Night 1: mafioso kills a townie
 		const gameNight1 = mustLoadGame(db, 'tw1');
 		const secondVictim = must(
 			gameNight1.players.find((p) => alignmentOf(p.role) === 'town' && p.alive),
@@ -394,8 +390,12 @@ describe('full game flow', () => {
 		const godfather = findByRole(state.players, 'godfather');
 		let townPlayers = findAllByAlignment(state.players, 'town');
 
-		// Drive rounds: godfather kills each night, town never reaches majority
+		// Night 0: no kill, just advance
 		const gameId = 'mw1';
+		await manager.endNight(gameId);
+		await manager.endDay(gameId); // Day 1: no votes
+
+		// Drive rounds: godfather kills each night, town never reaches majority
 		let round = 0;
 		while (round < 10) {
 			const target = townPlayers[0];
@@ -429,6 +429,11 @@ describe('full game flow', () => {
 		const godfather = findByRole(state.players, 'godfather');
 		const victim = must(findAllByAlignment(state.players, 'town')[0], 'town victim');
 
+		// Advance past Night 0 (no kills allowed)
+		await manager.endNight('nk1');
+		await manager.endDay('nk1');
+
+		// Night 1: godfather kills
 		manager.nightAction('nk1', { actor: godfather.did, kind: 'kill', target: victim.did });
 		await manager.endNight('nk1');
 
@@ -451,7 +456,11 @@ describe('full game flow', () => {
 		const doctor = findByRole(state.players, 'doctor');
 		const victim = findVillager(state.players);
 
-		// Mafia targets a villager, doctor protects the same villager
+		// Advance past Night 0 (no kills allowed)
+		await manager.endNight('ds1');
+		await manager.endDay('ds1');
+
+		// Night 1: mafia targets a villager, doctor protects the same villager
 		manager.nightAction('ds1', { actor: godfather.did, kind: 'kill', target: victim.did });
 		manager.nightAction('ds1', { actor: doctor.did, kind: 'protect', target: victim.did });
 		await manager.endNight('ds1');
@@ -577,9 +586,7 @@ describe('full game flow', () => {
 		const { manager, state } = await setupGame(db, 'mr1', 7);
 		const godfather = findByRole(state.players, 'godfather');
 
-		// Night 0 → Day 1
-		const victim0 = findVillager(state.players);
-		manager.nightAction('mr1', { actor: godfather.did, kind: 'kill', target: victim0.did });
+		// Night 0 → Day 1 (no kill on Night 0)
 		await manager.endNight('mr1');
 
 		let current = mustLoadGame(db, 'mr1');
@@ -592,9 +599,9 @@ describe('full game flow', () => {
 		expect(current.phase).toEqual({ kind: 'night', number: 1 });
 		expect(current.votes).toHaveLength(0);
 
-		// Night 1 → Day 2
-		const victim1 = findVillager(current.players);
-		manager.nightAction('mr1', { actor: godfather.did, kind: 'kill', target: victim1.did });
+		// Night 1: godfather kills → Day 2
+		const victim0 = findVillager(current.players);
+		manager.nightAction('mr1', { actor: godfather.did, kind: 'kill', target: victim0.did });
 		await manager.endNight('mr1');
 
 		current = mustLoadGame(db, 'mr1');
@@ -607,8 +614,16 @@ describe('full game flow', () => {
 		expect(current.phase).toEqual({ kind: 'night', number: 2 });
 		expect(current.votes).toHaveLength(0);
 
+		// Night 2: godfather kills → Day 3
+		const victim1 = findVillager(current.players);
+		manager.nightAction('mr1', { actor: godfather.did, kind: 'kill', target: victim1.did });
+		await manager.endNight('mr1');
+
+		current = mustLoadGame(db, 'mr1');
+		expect(current.phase).toEqual({ kind: 'day', number: 3 });
+
 		// Night kills are embedded in day_thread posts (not separate death records)
 		const kinds = getPostKinds(db, 'mr1');
-		expect(kinds.get('day_thread')).toBe(2);
+		expect(kinds.get('day_thread')).toBe(3);
 	});
 });
