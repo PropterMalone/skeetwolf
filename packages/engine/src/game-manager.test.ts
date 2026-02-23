@@ -411,6 +411,112 @@ describe('GameManager.getGame', () => {
 	});
 });
 
+describe('GameManager.formatVoteCount', () => {
+	beforeEach(() => {
+		postCounter = 0;
+	});
+
+	async function setupDayPhaseGame() {
+		const dm = createMockDm();
+		const manager = new GameManager(createMockDb(), createMockAgent(), dm.sender);
+		await manager.newGame('g1');
+		for (let i = 0; i < 7; i++) {
+			manager.signup('g1', `did:plc:p${i}`, `player${i}.bsky.social`);
+		}
+		await manager.startGame('g1');
+		await manager.endNight('g1');
+		return { manager, dm };
+	}
+
+	it('returns vote count with no votes', async () => {
+		const { manager } = await setupDayPhaseGame();
+		const text = manager.formatVoteCount('g1');
+		expect(text).toContain('no votes yet');
+		expect(text).toContain('needed for majority');
+	});
+
+	it('returns vote count with votes sorted by count', async () => {
+		const { manager } = await setupDayPhaseGame();
+		const game = manager.getGame('g1');
+		if (!game) throw new Error('expected game');
+
+		const alive = game.players.filter((p) => p.alive);
+		expect(alive.length).toBeGreaterThanOrEqual(4);
+		const target0 = alive[0] as (typeof alive)[0];
+		const voter1 = alive[1] as (typeof alive)[0];
+		const voter2 = alive[2] as (typeof alive)[0];
+		const voter3 = alive[3] as (typeof alive)[0];
+		// Two players vote for target0, one votes for voter1
+		manager.vote('g1', voter1.did, target0.did);
+		manager.vote('g1', voter2.did, target0.did);
+		manager.vote('g1', voter3.did, voter1.did);
+
+		const text = manager.formatVoteCount('g1');
+		expect(text).toContain(`@${target0.handle}: 2`);
+		expect(text).toContain(`@${voter1.handle}: 1`);
+		// Higher count should appear first
+		expect(text).toBeDefined();
+		const idx0 = (text as string).indexOf(`@${target0.handle}: 2`);
+		const idx1 = (text as string).indexOf(`@${voter1.handle}: 1`);
+		expect(idx0).toBeLessThan(idx1);
+	});
+
+	it('returns null during night phase', async () => {
+		const dm = createMockDm();
+		const manager = new GameManager(createMockDb(), createMockAgent(), dm.sender);
+		await manager.newGame('g1');
+		for (let i = 0; i < 7; i++) {
+			manager.signup('g1', `did:plc:p${i}`, `player${i}.bsky.social`);
+		}
+		await manager.startGame('g1');
+		// Still in Night 0
+		expect(manager.formatVoteCount('g1')).toBeNull();
+	});
+
+	it('returns null for unknown game', () => {
+		const dm = createMockDm();
+		const manager = new GameManager(createMockDb(), createMockAgent(), dm.sender);
+		expect(manager.formatVoteCount('nope')).toBeNull();
+	});
+});
+
+describe('GameManager hourly vote count via tick', () => {
+	beforeEach(() => {
+		postCounter = 0;
+	});
+
+	it('posts vote count after 1 hour of day phase', async () => {
+		const dm = createMockDm();
+		const mockAgent = createMockAgent();
+		const manager = new GameManager(createMockDb(), mockAgent, dm.sender);
+		await manager.newGame('g1');
+		for (let i = 0; i < 7; i++) {
+			manager.signup('g1', `did:plc:p${i}`, `player${i}.bsky.social`);
+		}
+		await manager.startGame('g1');
+		await manager.endNight('g1');
+
+		const game = manager.getGame('g1');
+		if (!game) throw new Error('expected game');
+
+		const postsBefore = mockAgent.post.mock.calls.length;
+
+		// Tick at 30 min — no vote count post
+		await manager.tick(game.phaseStartedAt + 30 * 60 * 1000);
+		expect(mockAgent.post.mock.calls.length).toBe(postsBefore);
+
+		// Tick at 61 min — should post vote count
+		await manager.tick(game.phaseStartedAt + 61 * 60 * 1000);
+		expect(mockAgent.post.mock.calls.length).toBe(postsBefore + 1);
+		const lastPost = mockAgent.post.mock.calls.at(-1)?.[0];
+		expect(lastPost.text).toContain('vote count');
+
+		// Tick again at 61 min — no duplicate
+		await manager.tick(game.phaseStartedAt + 61 * 60 * 1000);
+		expect(mockAgent.post.mock.calls.length).toBe(postsBefore + 1);
+	});
+});
+
 describe('GameManager cleanup after game over', () => {
 	beforeEach(() => {
 		postCounter = 0;

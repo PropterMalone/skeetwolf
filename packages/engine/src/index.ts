@@ -285,6 +285,34 @@ async function handleMention(
 			}
 			break;
 		}
+		case 'vote_count': {
+			let countGameId = cmd.gameId;
+			if (!countGameId) {
+				const game = manager.findGameForPlayer(authorDid);
+				if (!game) {
+					await manager.replyNoGame(
+						'Include a game ID (e.g., "votes #abc") or join a game first.',
+						postUri,
+						postCid,
+					);
+					break;
+				}
+				countGameId = game.id;
+			}
+			const countText = manager.formatVoteCount(countGameId);
+			if (countText) {
+				console.log(`${authorHandle} requested vote count for game ${countGameId}`);
+				await manager.reply(countGameId, countText, postUri, postCid);
+			} else {
+				await manager.reply(
+					countGameId,
+					'Vote count is only available during the day phase.',
+					postUri,
+					postCid,
+				);
+			}
+			break;
+		}
 		case 'queue_status': {
 			console.log(`${authorHandle} checking queue status`);
 			await manager.queueStatus(postUri, postCid);

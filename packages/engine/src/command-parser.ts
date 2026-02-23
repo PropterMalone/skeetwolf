@@ -16,6 +16,7 @@ export type MentionCommand =
 	| { kind: 'confirm'; gameId: string }
 	| { kind: 'invite'; gameId: string; handle: string }
 	| { kind: 'cancel'; gameId: string }
+	| { kind: 'vote_count'; gameId: string }
 	| { kind: 'unknown'; text: string };
 
 export type DmCommand =
@@ -34,6 +35,7 @@ export type DmCommand =
  *   "start #<id>" or "start <id>"
  *   "vote @<handle>" (with optional #<id> game context)
  *   "unvote" (with optional #<id> game context)
+ *   "vote count" / "votes" / "votes?" / "tally" (with optional #<id>)
  *
  * The bot handle is stripped before parsing if present.
  */
@@ -92,6 +94,12 @@ export function parseMention(rawText: string, botHandle?: string): MentionComman
 	const startMatch = lower.match(/start\s+#?(\w+)/);
 	if (startMatch?.[1]) {
 		return { kind: 'start', gameId: startMatch[1] };
+	}
+
+	// Vote count: "vote count", "votes", "votes?", "tally" with optional "#gameId"
+	if (/vote\s*count|votes\??|tally/i.test(lower)) {
+		const gameId = extractGameId(lower);
+		return { kind: 'vote_count', gameId: gameId ?? '' };
 	}
 
 	// Vote: "vote @handle" with optional "#gameId" anywhere
