@@ -26,6 +26,16 @@ function createMockAgent(): any {
 			});
 		}),
 		session: { did: 'did:plc:bot' },
+		api: {
+			com: {
+				atproto: {
+					repo: {
+						createRecord: vi.fn().mockResolvedValue({}),
+						deleteRecord: vi.fn().mockResolvedValue({}),
+					},
+				},
+			},
+		},
 	};
 }
 
@@ -83,8 +93,8 @@ describe('engine → feed integration', () => {
 		const startErr = await manager.startGame('test1');
 		expect(startErr).toBeNull();
 
-		// Verify DMs were sent to all players
-		expect(dm.sent.length).toBe(7);
+		// Verify DMs were sent to all players (role DMs + Night 0 DMs)
+		expect(dm.sent.length).toBe(14);
 
 		// 4. Record some player posts (simulating vote mentions)
 		manager.recordPlayerPost('test1', 'at://did:plc:p0/post/vote1', 'did:plc:p0');
@@ -119,10 +129,9 @@ describe('engine → feed integration', () => {
 			}),
 		);
 
-		// Should have posts: announcement, phase (game start), phase (dawn/night end),
-		// phase (day start), death (elimination), phase or game_over (next phase)
-		// Plus 2 player posts
-		expect(result.feed.length).toBeGreaterThanOrEqual(5);
+		// Should have posts: announcement, day_thread (Day 1), death (elimination in thread),
+		// game_over or night DMs, plus 2 player posts
+		expect(result.feed.length).toBeGreaterThanOrEqual(4);
 
 		// All posts should be AT URIs
 		for (const item of result.feed) {
@@ -257,9 +266,8 @@ describe('engine → feed integration', () => {
 
 		const kindMap = new Map(rows.map((r) => [r.kind, r.count]));
 
-		// Should have an announcement and at least one phase post
+		// Should have an announcement (from newGame). No phase post — game start is DM-only.
 		expect(kindMap.get('announcement')).toBe(1);
-		expect(kindMap.get('phase')).toBeGreaterThanOrEqual(1);
 	});
 });
 
@@ -431,8 +439,9 @@ describe('full game flow', () => {
 		);
 		expect(victimAfter.alive).toBe(false);
 
+		// Night kill result is embedded in the day_thread post, not a separate death record
 		const kinds = getPostKinds(db, 'nk1');
-		expect(kinds.get('death')).toBeGreaterThanOrEqual(1);
+		expect(kinds.get('day_thread')).toBeGreaterThanOrEqual(1);
 	});
 
 	it('doctor saves target — no one dies', async () => {
@@ -452,7 +461,8 @@ describe('full game flow', () => {
 
 		const kinds = getPostKinds(db, 'ds1');
 		expect(kinds.has('death')).toBe(false);
-		expect(kinds.get('phase')).toBeGreaterThanOrEqual(2); // game start + no-death dawn
+		// Day thread posted (dawn with no death), announcement from newGame
+		expect(kinds.get('day_thread')).toBeGreaterThanOrEqual(1);
 	});
 
 	it('cop investigates godfather — appears town', async () => {
@@ -529,7 +539,8 @@ describe('full game flow', () => {
 		expect(afterTick.phase.number).toBe(1);
 
 		const kinds = getPostKinds(db, 'pt1');
-		expect(kinds.get('phase')).toBeGreaterThanOrEqual(2);
+		// Timer expired night → day: should have day_thread post
+		expect(kinds.get('day_thread')).toBeGreaterThanOrEqual(1);
 	});
 
 	it('hydrate — persist and reload game state', async () => {
@@ -596,8 +607,8 @@ describe('full game flow', () => {
 		expect(current.phase).toEqual({ kind: 'night', number: 2 });
 		expect(current.votes).toHaveLength(0);
 
-		// Verify multiple death posts recorded (one per night kill)
+		// Night kills are embedded in day_thread posts (not separate death records)
 		const kinds = getPostKinds(db, 'mr1');
-		expect(kinds.get('death')).toBe(2);
+		expect(kinds.get('day_thread')).toBe(2);
 	});
 });

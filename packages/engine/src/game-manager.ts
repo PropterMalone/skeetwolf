@@ -4,6 +4,7 @@
  */
 import type { AtpAgent } from '@atproto/api';
 import {
+	DEFAULT_CONFIG,
 	type Did,
 	type GameId,
 	type GameState,
@@ -12,7 +13,6 @@ import {
 	type NightAction,
 	type NightActionKind,
 	type PublicQueue,
-	DEFAULT_CONFIG,
 	addInviteSlot,
 	addPlayer,
 	addToQueue,
@@ -37,8 +37,18 @@ import {
 	submitNightAction,
 	tallyVotes,
 } from '@skeetwolf/shared';
+import type { LabelerServer } from '@skyware/labeler';
 import type Database from 'better-sqlite3';
-import { type DmSender, postMessage, replyToPost, resolveHandle } from './bot.js';
+import {
+	type DmSender,
+	createPostgate,
+	createThreadgate,
+	deletePostgate,
+	postMessage,
+	postWithQuote,
+	replyToPost,
+	resolveHandle,
+} from './bot.js';
 import {
 	type PostKind,
 	clearQueueEntries,
@@ -51,6 +61,7 @@ import {
 	saveInviteGame,
 	saveQueueEntry,
 } from './db.js';
+import { labelPost } from './labeler.js';
 
 const POST_KIND_LABELS: Record<PostKind, string[]> = {
 	announcement: ['skeetwolf', 'game-announcement'],
@@ -60,6 +71,7 @@ const POST_KIND_LABELS: Record<PostKind, string[]> = {
 	game_over: ['skeetwolf', 'game-over'],
 	reply: ['skeetwolf', 'game-reply'],
 	player: ['skeetwolf'],
+	day_thread: ['skeetwolf', 'game-day-thread'],
 };
 
 export class GameManager {
@@ -73,6 +85,7 @@ export class GameManager {
 		private db: Database.Database,
 		private agent: AtpAgent,
 		private dm: DmSender,
+		private labeler: LabelerServer | null = null,
 	) {}
 
 	/** Get a game's current state (or null if not loaded) */
@@ -99,7 +112,7 @@ export class GameManager {
 		);
 	}
 
-	/** Create a new game and announce it */
+	/** Create a new game and announce it (manual flow — signup post, not day thread) */
 	async newGame(id: GameId): Promise<GameState> {
 		const state = createGame(id);
 		this.persist(state);
@@ -142,7 +155,7 @@ export class GameManager {
 		return null;
 	}
 
-	/** Shared post-start logic: DM roles, set up mafia relay, announce Night 0 */
+	/** DM roles and set up mafia relay. No public Night 0 post — first public post is Day 1. */
 	private async announceGameStart(game: GameState): Promise<void> {
 		const gameId = game.id;
 
@@ -186,11 +199,13 @@ export class GameManager {
 			);
 		}
 
-		await this.post(
-			gameId,
-			`Game #${gameId} has begun! ${game.players.length} players. Night 0 — roles have been sent via DM. Night ends in ${game.config.nightDurationMs / 3600000}h.`,
-			'phase',
-		);
+		// DM all players that Night 0 has started (no public post)
+		for (const player of game.players) {
+			await this.dm.sendDm(
+				player.did,
+				`Night 0 has begun. Night ends in ${game.config.nightDurationMs / 3600000}h. Power roles: send your actions now.`,
+			);
+		}
 	}
 
 	/** Process a vote during day phase */
@@ -237,14 +252,14 @@ export class GameManager {
 		return null;
 	}
 
-	/** End the day phase — tally votes, eliminate, check win, advance */
+	/** End the day phase — tally votes, eliminate, check win, lock thread, DM night */
 	async endDay(gameId: GameId): Promise<void> {
 		let state = this.games.get(gameId);
 		if (!state) return;
 
 		const { target, counts } = tallyVotes(state);
 
-		// Announce vote results
+		// Announce vote results in the day thread
 		const currentState = state;
 		const countStr = [...counts.entries()]
 			.map(([did, n]) => {
@@ -260,14 +275,14 @@ export class GameManager {
 
 			const role = eliminated?.role;
 			const alignment = role ? alignmentOf(role) : 'unknown';
-			await this.post(
-				gameId,
+			await this.postInThread(
+				state,
 				`Day ${state.phase.number} results — votes: ${countStr}\n\n@${eliminated?.handle} has been eliminated. They were ${(role ?? 'unknown').toUpperCase()} (${alignment}).`,
 				'death',
 			);
 		} else {
-			await this.post(
-				gameId,
+			await this.postInThread(
+				state,
 				`Day ${state.phase.number} results — no majority reached. Votes: ${countStr}\n\nNo one is eliminated.`,
 				'vote_result',
 			);
@@ -276,19 +291,34 @@ export class GameManager {
 		if (state.winner) {
 			await this.announceWinner(state);
 		} else {
+			// Lock the day thread
+			if (state.dayThreadUri) {
+				try {
+					await createThreadgate(this.agent, state.dayThreadUri);
+				} catch (err) {
+					console.error(`Failed to create threadgate for ${state.dayThreadUri}:`, err);
+				}
+			}
+
 			state = advancePhase(state);
-			await this.post(
-				gameId,
-				`Night ${state.phase.number} begins. Power roles: send your actions via DM. Night ends in ${state.config.nightDurationMs / 3600000}h.`,
-				'phase',
-			);
+			// Clear day thread — night has no public thread
+			state = { ...state, dayThreadUri: null, dayThreadCid: null };
+
+			// DM night announcement instead of public post
+			const alivePlayers = state.players.filter((p) => p.alive);
+			for (const player of alivePlayers) {
+				await this.dm.sendDm(
+					player.did,
+					`Night ${state.phase.number} begins. Power roles: send your actions via DM. Night ends in ${state.config.nightDurationMs / 3600000}h.`,
+				);
+			}
 		}
 
 		this.persist(state);
 		this.cleanupFinishedGame(state);
 	}
 
-	/** End the night phase — resolve actions, announce, advance */
+	/** End the night phase — resolve actions, post day thread */
 	async endNight(gameId: GameId): Promise<void> {
 		let state = this.games.get(gameId);
 		if (!state) return;
@@ -304,28 +334,71 @@ export class GameManager {
 			);
 		}
 
-		// Announce night result
+		// Build dawn results text
+		let dawnResults: string;
 		if (resolution.killed) {
 			const victim = state.players.find((p) => p.did === resolution.killed);
 			state = applyWinCondition(state);
-			await this.post(
-				gameId,
-				`Dawn breaks. @${victim?.handle} was found dead. They were ${victim?.role.toUpperCase()} (${victim ? alignmentOf(victim.role) : 'unknown'}).`,
-				'death',
-			);
+			dawnResults = `@${victim?.handle} was found dead. They were ${victim?.role.toUpperCase()} (${victim ? alignmentOf(victim.role) : 'unknown'}).`;
 		} else {
-			await this.post(gameId, 'Dawn breaks. No one died in the night.', 'phase');
+			dawnResults = 'No one died in the night.';
 		}
 
 		if (state.winner) {
+			// Post final day thread with results, then game over
+			const dayNumber = Math.floor(state.phase.number / 2) + 1;
+			const playerList = state.players
+				.filter((p) => p.alive)
+				.map((p) => `@${p.handle}`)
+				.join(' ');
+			const text = `🐺 Skeetwolf Game #${gameId} — Day ${dayNumber}\n\nDawn breaks. ${dawnResults}\n\nPlayers alive: ${playerList}`;
+			const previousDayUri = state.dayThreadUri;
+			const previousDayCid = state.dayThreadCid;
+			const { uri, cid } = await this.postDayThread(
+				state,
+				text,
+				previousDayUri ?? undefined,
+				previousDayCid ?? undefined,
+			);
+			state = { ...state, dayThreadUri: uri, dayThreadCid: cid };
+			this.persist(state);
+
 			await this.announceWinner(state);
 		} else {
 			state = advancePhase(state);
-			await this.post(
-				gameId,
-				`Day ${state.phase.number} begins. Discuss and vote! Day ends in ${state.config.dayDurationMs / 3600000}h.`,
-				'phase',
+			const dayNumber = state.phase.number;
+
+			const playerList = state.players
+				.filter((p) => p.alive)
+				.map((p) => `@${p.handle}`)
+				.join(' ');
+
+			const text = `🐺 Skeetwolf Game #${gameId} — Day ${dayNumber}!\n\nDawn breaks. ${dawnResults}\n\nPlayers alive: ${playerList}\nDiscuss and vote! Day ends in ${state.config.dayDurationMs / 3600000}h.`;
+
+			const previousDayUri = state.dayThreadUri;
+			const previousDayCid = state.dayThreadCid;
+
+			const { uri, cid } = await this.postDayThread(
+				state,
+				text,
+				previousDayUri ?? undefined,
+				previousDayCid ?? undefined,
 			);
+			state = {
+				...state,
+				dayThreadUri: uri,
+				dayThreadCid: cid,
+			};
+
+			// Day 1 = game announcement post; set announcementUri if not already set
+			if (!state.announcementUri) {
+				state = { ...state, announcementUri: uri, announcementCid: cid };
+			}
+
+			// Register per-game feed on Day 1
+			if (dayNumber === 1) {
+				await this.registerGameFeed(gameId);
+			}
 		}
 
 		this.persist(state);
@@ -414,8 +487,8 @@ export class GameManager {
 			.filter((p) => alignmentOf(p.role) === state.winner)
 			.map((p) => `@${p.handle}`)
 			.join(', ');
-		await this.post(
-			state.id,
+		await this.postInThread(
+			state,
 			`🏆 Game #${state.id} is over! ${state.winner?.toUpperCase()} wins!\n\nWinners: ${winners}\n\nRoles: ${state.players.map((p) => `@${p.handle} (${p.role})`).join(', ')}`,
 			'game_over',
 		);
@@ -429,13 +502,85 @@ export class GameManager {
 		}
 	}
 
-	/** Post a message and record it in game_posts for the feed generator */
+	/** Post a day thread — top-level for Day 1, QT of previous day for Day 2+ */
+	private async postDayThread(
+		state: GameState,
+		text: string,
+		previousDayUri?: string,
+		previousDayCid?: string,
+	): Promise<{ uri: string; cid: string }> {
+		const labels = POST_KIND_LABELS.day_thread;
+		let uri: string;
+		let cid: string;
+
+		if (previousDayUri && previousDayCid) {
+			// QT the previous day: delete postgate → QT → re-create postgate
+			try {
+				await deletePostgate(this.agent, previousDayUri);
+			} catch {
+				// Postgate might not exist (e.g., first run after upgrade)
+			}
+			const result = await postWithQuote(this.agent, text, previousDayUri, previousDayCid, labels);
+			uri = result.uri;
+			cid = result.cid;
+			try {
+				await createPostgate(this.agent, previousDayUri);
+			} catch (err) {
+				console.error(`Failed to re-create postgate for ${previousDayUri}:`, err);
+			}
+		} else {
+			// Day 1: top-level post
+			const result = await postMessage(this.agent, text, labels);
+			uri = result.uri;
+			cid = result.cid;
+		}
+
+		// Postgate on the new day post (disable QTs)
+		try {
+			await createPostgate(this.agent, uri);
+		} catch (err) {
+			console.error(`Failed to create postgate for day thread ${uri}:`, err);
+		}
+
+		// Label via external labeler
+		if (this.labeler) {
+			await labelPost(this.labeler, uri, 'skeetwolf-game');
+		}
+
+		// Record in game_posts
+		const botDid = this.agent.session?.did ?? 'unknown';
+		const phase = `${state.phase.kind}-${state.phase.number}`;
+		recordGamePost(this.db, {
+			uri,
+			gameId: state.id,
+			authorDid: botDid,
+			kind: 'day_thread',
+			phase,
+		});
+
+		return { uri, cid };
+	}
+
+	/** Post a top-level message, add postgate, label, and record in game_posts */
 	private async post(
 		gameId: GameId,
 		text: string,
 		kind: PostKind,
 	): Promise<{ uri: string; cid: string }> {
 		const { uri, cid } = await postMessage(this.agent, text, POST_KIND_LABELS[kind]);
+
+		// Postgate on all bot posts (disable QTs)
+		try {
+			await createPostgate(this.agent, uri);
+		} catch (err) {
+			console.error(`Failed to create postgate for ${uri}:`, err);
+		}
+
+		// Label via external labeler
+		if (this.labeler) {
+			await labelPost(this.labeler, uri, 'skeetwolf-game');
+		}
+
 		const botDid = this.agent.session?.did ?? 'unknown';
 		const state = this.games.get(gameId);
 		const phase = state ? `${state.phase.kind}-${state.phase.number}` : null;
@@ -443,13 +588,54 @@ export class GameManager {
 		return { uri, cid };
 	}
 
-	/** Reply to a mention and record the reply in game_posts.
-	 * Threads under the game announcement (root) when available,
-	 * with the triggering mention as the parent. */
+	/** Post a reply in the current day thread. Falls back to standalone reply if no thread. */
+	private async postInThread(
+		state: GameState,
+		text: string,
+		kind: PostKind,
+	): Promise<{ uri: string; cid: string }> {
+		const rootUri = state.dayThreadUri;
+		const rootCid = state.dayThreadCid;
+		if (!rootUri || !rootCid) {
+			// No active day thread — post as top-level
+			return this.post(state.id, text, kind);
+		}
+
+		const { uri, cid } = await replyToPost(
+			this.agent,
+			text,
+			rootUri,
+			rootCid,
+			rootUri,
+			rootCid,
+			POST_KIND_LABELS[kind],
+		);
+
+		// Postgate on replies too
+		try {
+			await createPostgate(this.agent, uri);
+		} catch (err) {
+			console.error(`Failed to create postgate for reply ${uri}:`, err);
+		}
+
+		// Label via external labeler
+		if (this.labeler) {
+			await labelPost(this.labeler, uri, 'skeetwolf-game');
+		}
+
+		const botDid = this.agent.session?.did ?? 'unknown';
+		const phase = `${state.phase.kind}-${state.phase.number}`;
+		recordGamePost(this.db, { uri, gameId: state.id, authorDid: botDid, kind, phase });
+		return { uri, cid };
+	}
+
+	/** Reply to a mention — threads under day thread (root) with mention as parent.
+	 * During night (no day thread), falls back to parent-as-root. */
 	async reply(gameId: GameId, text: string, parentUri: string, parentCid: string): Promise<void> {
 		const state = this.games.get(gameId);
-		const rootUri = state?.announcementUri ?? parentUri;
-		const rootCid = state?.announcementCid ?? parentCid;
+		// Use day thread as root during day phase, fall back to announcement, then parent
+		const rootUri = state?.dayThreadUri ?? state?.announcementUri ?? parentUri;
+		const rootCid = state?.dayThreadCid ?? state?.announcementCid ?? parentCid;
 
 		const replyLabels = POST_KIND_LABELS.reply;
 		const { uri } = await replyToPost(
@@ -461,6 +647,19 @@ export class GameManager {
 			rootCid,
 			replyLabels,
 		);
+
+		// Postgate on reply
+		try {
+			await createPostgate(this.agent, uri);
+		} catch (err) {
+			console.error(`Failed to create postgate for reply ${uri}:`, err);
+		}
+
+		// Label via external labeler
+		if (this.labeler) {
+			await labelPost(this.labeler, uri, 'skeetwolf-game');
+		}
+
 		const botDid = this.agent.session?.did ?? 'unknown';
 		const phase = state ? `${state.phase.kind}-${state.phase.number}` : null;
 		recordGamePost(this.db, { uri, gameId, authorDid: botDid, kind: 'reply', phase });
@@ -495,7 +694,7 @@ export class GameManager {
 		);
 
 		if (canPopQueue(this.publicQueue, minPlayers)) {
-			await this.popAndStartGame(minPlayers);
+			await this.popAndStartGame(minPlayers, replyUri, replyCid);
 		}
 	}
 
@@ -528,15 +727,18 @@ export class GameManager {
 		await this.replyNoGame('You left the queue', replyUri, replyCid);
 	}
 
-	/** Pop players from queue and start a game */
-	private async popAndStartGame(count: number): Promise<void> {
+	/** Pop players from queue and start a game. No public announcement — DM only. */
+	private async popAndStartGame(
+		count: number,
+		triggerUri?: string,
+		triggerCid?: string,
+	): Promise<void> {
 		const { popped, queue } = popQueue(this.publicQueue, count);
 
 		// Filter out players who entered a game since queuing
 		const eligible = popped.filter((e) => !this.findGameForPlayer(e.did));
 		if (eligible.length < count) {
 			// Not enough eligible — put them back, don't start
-			// (The ineligible ones will be cleaned up next time)
 			return;
 		}
 
@@ -549,13 +751,6 @@ export class GameManager {
 		const id = Date.now().toString(36);
 		let state = createGame(id);
 		this.persist(state);
-
-		const { uri, cid } = await this.post(
-			id,
-			`🐺 Skeetwolf Game #${id} — auto-started from the queue!\n\nPlayers: ${eligible.map((e) => `@${e.handle}`).join(', ')}`,
-			'announcement',
-		);
-		state = { ...state, announcementUri: uri, announcementCid: cid };
 
 		// Add all popped players
 		for (const entry of eligible) {
@@ -572,6 +767,16 @@ export class GameManager {
 		}
 		state = roleResult.state;
 		this.persist(state);
+
+		// Reply in queue thread: "Game starting — check your DMs!"
+		if (triggerUri && triggerCid) {
+			await this.replyNoGame(
+				`🐺 Game #${id} starting — check your DMs for your role!`,
+				triggerUri,
+				triggerCid,
+			);
+		}
+
 		await this.announceGameStart(state);
 	}
 
@@ -668,7 +873,7 @@ export class GameManager {
 		);
 
 		if (isInviteReady(result.invite, minPlayers)) {
-			await this.startInviteGame(gameId);
+			await this.startInviteGame(gameId, replyUri, replyCid);
 		}
 	}
 
@@ -740,8 +945,12 @@ export class GameManager {
 		await this.replyNoGame(`Invite game #${gameId} cancelled`, replyUri, replyCid);
 	}
 
-	/** Convert a ready invite into a real game and start it */
-	private async startInviteGame(inviteId: GameId): Promise<void> {
+	/** Convert a ready invite into a real game and start it. No public announcement. */
+	private async startInviteGame(
+		inviteId: GameId,
+		triggerUri?: string,
+		triggerCid?: string,
+	): Promise<void> {
 		const invite = this.inviteGames.get(inviteId);
 		if (!invite) return;
 
@@ -750,13 +959,6 @@ export class GameManager {
 
 		let state = createGame(id);
 		this.persist(state);
-
-		const { uri, cid } = await this.post(
-			id,
-			`🐺 Skeetwolf Game #${id} — starting from invite!\n\nPlayers: ${players.map((p) => `@${p.handle}`).join(', ')}`,
-			'announcement',
-		);
-		state = { ...state, announcementUri: uri, announcementCid: cid };
 
 		for (const p of players) {
 			const r = addPlayer(state, p.did, p.handle);
@@ -771,6 +973,16 @@ export class GameManager {
 		}
 		state = roleResult.state;
 		this.persist(state);
+
+		// Reply in invite thread: "Game starting — check your DMs!"
+		if (triggerUri && triggerCid) {
+			await this.replyNoGame(
+				`🐺 Game #${id} starting — check your DMs for your role!`,
+				triggerUri,
+				triggerCid,
+			);
+		}
+
 		await this.announceGameStart(state);
 
 		// Mark invite as active and remove from tracking
@@ -790,6 +1002,29 @@ export class GameManager {
 	async replyNoGame(text: string, parentUri: string, parentCid: string): Promise<void> {
 		const replyLabels = POST_KIND_LABELS.reply;
 		await replyToPost(this.agent, text, parentUri, parentCid, parentUri, parentCid, replyLabels);
+	}
+
+	/** Register a per-game feed with Bluesky */
+	private async registerGameFeed(gameId: GameId): Promise<void> {
+		const did = this.agent.session?.did;
+		if (!did) return;
+
+		try {
+			await this.agent.api.com.atproto.repo.createRecord({
+				repo: did,
+				collection: 'app.bsky.feed.generator',
+				rkey: `skeetwolf-${gameId}`,
+				record: {
+					did: process.env['FEED_PUBLISHER_DID'] ?? did,
+					displayName: `Skeetwolf Game #${gameId}`,
+					description: `Follow Skeetwolf Game #${gameId} — all day threads, votes, and results.`,
+					createdAt: new Date().toISOString(),
+				},
+			});
+			console.log(`Registered feed for game ${gameId}`);
+		} catch (err) {
+			console.error(`Failed to register feed for game ${gameId}:`, err);
+		}
 	}
 
 	private persist(state: GameState): void {

@@ -14,6 +14,16 @@ function createMockAgent(): any {
 			});
 		}),
 		session: { did: 'did:plc:bot' },
+		api: {
+			com: {
+				atproto: {
+					repo: {
+						createRecord: vi.fn().mockResolvedValue({}),
+						deleteRecord: vi.fn().mockResolvedValue({}),
+					},
+				},
+			},
+		},
 	};
 }
 

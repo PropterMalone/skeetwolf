@@ -141,6 +141,10 @@ export interface GameState {
 	announcementUri: string | null;
 	/** Post CID of the game announcement (needed for reply threading) */
 	announcementCid: string | null;
+	/** Current day's thread root URI (fresh thread each day) */
+	dayThreadUri: string | null;
+	/** Current day's thread root CID */
+	dayThreadCid: string | null;
 	/** Timestamp when the current phase started (for timer-based transitions) */
 	phaseStartedAt: number;
 	createdAt: number;

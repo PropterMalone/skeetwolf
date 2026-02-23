@@ -12,6 +12,7 @@
   "dependencies": {
     "@atproto/api": "^0.13.0",
     "@skeetwolf/shared": "*",
+    "@skyware/labeler": "^0.2.0",
     "better-sqlite3": "^11.0.0"
   },
   "devDependencies": {
