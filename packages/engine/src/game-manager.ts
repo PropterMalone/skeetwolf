@@ -1081,7 +1081,7 @@ export class GameManager {
 				collection: 'app.bsky.feed.generator',
 				rkey: `skeetwolf-${gameId}`,
 				record: {
-					did: process.env.FEED_PUBLISHER_DID ?? did,
+					did: process.env['FEED_PUBLISHER_DID'] ?? did,
 					displayName: `Skeetwolf Game #${gameId}`,
 					description: `Follow Skeetwolf Game #${gameId} — all day threads, votes, and results.`,
 					createdAt: new Date().toISOString(),
