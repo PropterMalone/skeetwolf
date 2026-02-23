@@ -344,7 +344,12 @@ async function handleDm(
 				await dm.sendDm(senderDid, 'You are not in any active game.');
 				break;
 			}
-			const error = manager.nightActionByHandle(game.id, senderDid, cmd.kind, cmd.targetHandle);
+			const error = await manager.nightActionByHandle(
+				game.id,
+				senderDid,
+				cmd.kind,
+				cmd.targetHandle,
+			);
 			if (error) {
 				console.log(`Night action failed: ${error}`);
 				await dm.sendDm(senderDid, error);

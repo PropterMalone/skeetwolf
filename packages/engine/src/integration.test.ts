@@ -364,7 +364,11 @@ describe('full game flow', () => {
 			gameNight1.players.find((p) => alignmentOf(p.role) === 'town' && p.alive),
 			'second town victim',
 		);
-		manager.nightAction('tw1', { actor: mafioso.did, kind: 'kill', target: secondVictim.did });
+		await manager.nightAction('tw1', {
+			actor: mafioso.did,
+			kind: 'kill',
+			target: secondVictim.did,
+		});
 		await manager.endNight('tw1');
 
 		// Day 2: town votes out the mafioso
@@ -400,7 +404,7 @@ describe('full game flow', () => {
 		while (round < 10) {
 			const target = townPlayers[0];
 			if (!target) break;
-			manager.nightAction(gameId, { actor: godfather.did, kind: 'kill', target: target.did });
+			await manager.nightAction(gameId, { actor: godfather.did, kind: 'kill', target: target.did });
 			await manager.endNight(gameId);
 
 			const current = mustLoadGame(db, gameId);
@@ -434,7 +438,7 @@ describe('full game flow', () => {
 		await manager.endDay('nk1');
 
 		// Night 1: godfather kills
-		manager.nightAction('nk1', { actor: godfather.did, kind: 'kill', target: victim.did });
+		await manager.nightAction('nk1', { actor: godfather.did, kind: 'kill', target: victim.did });
 		await manager.endNight('nk1');
 
 		const afterNight = mustLoadGame(db, 'nk1');
@@ -461,8 +465,8 @@ describe('full game flow', () => {
 		await manager.endDay('ds1');
 
 		// Night 1: mafia targets a villager, doctor protects the same villager
-		manager.nightAction('ds1', { actor: godfather.did, kind: 'kill', target: victim.did });
-		manager.nightAction('ds1', { actor: doctor.did, kind: 'protect', target: victim.did });
+		await manager.nightAction('ds1', { actor: godfather.did, kind: 'kill', target: victim.did });
+		await manager.nightAction('ds1', { actor: doctor.did, kind: 'protect', target: victim.did });
 		await manager.endNight('ds1');
 
 		const afterNight = mustLoadGame(db, 'ds1');
@@ -479,7 +483,11 @@ describe('full game flow', () => {
 		const cop = findByRole(state.players, 'cop');
 		const godfather = findByRole(state.players, 'godfather');
 
-		manager.nightAction('ci1', { actor: cop.did, kind: 'investigate', target: godfather.did });
+		await manager.nightAction('ci1', {
+			actor: cop.did,
+			kind: 'investigate',
+			target: godfather.did,
+		});
 		await manager.endNight('ci1');
 
 		const copDms = dm.sent.filter((m) => m.did === cop.did && m.text.includes(godfather.handle));
@@ -492,7 +500,7 @@ describe('full game flow', () => {
 		const cop = findByRole(state.players, 'cop');
 		const mafioso = findByRole(state.players, 'mafioso');
 
-		manager.nightAction('ci2', { actor: cop.did, kind: 'investigate', target: mafioso.did });
+		await manager.nightAction('ci2', { actor: cop.did, kind: 'investigate', target: mafioso.did });
 		await manager.endNight('ci2');
 
 		const copDms = dm.sent.filter((m) => m.did === cop.did && m.text.includes(mafioso.handle));
@@ -601,7 +609,7 @@ describe('full game flow', () => {
 
 		// Night 1: godfather kills → Day 2
 		const victim0 = findVillager(current.players);
-		manager.nightAction('mr1', { actor: godfather.did, kind: 'kill', target: victim0.did });
+		await manager.nightAction('mr1', { actor: godfather.did, kind: 'kill', target: victim0.did });
 		await manager.endNight('mr1');
 
 		current = mustLoadGame(db, 'mr1');
@@ -616,7 +624,7 @@ describe('full game flow', () => {
 
 		// Night 2: godfather kills → Day 3
 		const victim1 = findVillager(current.players);
-		manager.nightAction('mr1', { actor: godfather.did, kind: 'kill', target: victim1.did });
+		await manager.nightAction('mr1', { actor: godfather.did, kind: 'kill', target: victim1.did });
 		await manager.endNight('mr1');
 
 		current = mustLoadGame(db, 'mr1');
