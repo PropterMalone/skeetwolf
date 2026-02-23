@@ -113,6 +113,32 @@ describe('parseMention', () => {
 		});
 	});
 
+	it('parses "vote count" as vote_count', () => {
+		expect(parseMention('vote count', bot)).toEqual({ kind: 'vote_count', gameId: '' });
+	});
+
+	it('parses "vote count #game1" with game id', () => {
+		expect(parseMention('vote count #game1', bot)).toEqual({
+			kind: 'vote_count',
+			gameId: 'game1',
+		});
+	});
+
+	it('parses "votes" as vote_count', () => {
+		expect(parseMention('votes', bot)).toEqual({ kind: 'vote_count', gameId: '' });
+	});
+
+	it('parses "votes?" as vote_count', () => {
+		expect(parseMention('votes?', bot)).toEqual({ kind: 'vote_count', gameId: '' });
+	});
+
+	it('parses "tally" as vote_count', () => {
+		expect(parseMention('tally #game1', bot)).toEqual({
+			kind: 'vote_count',
+			gameId: 'game1',
+		});
+	});
+
 	it('returns unknown for unrecognized text', () => {
 		const result = parseMention('hello world', bot);
 		expect(result.kind).toBe('unknown');

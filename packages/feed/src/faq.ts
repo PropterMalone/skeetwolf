@@ -89,6 +89,7 @@ export const FAQ_HTML = `<!DOCTYPE html>
   <li><code>queue?</code> — Check queue status</li>
   <li><code>vote @handle</code> — Vote to eliminate someone (during day phase)</li>
   <li><code>unvote</code> — Retract your vote</li>
+  <li><code>votes</code> or <code>tally</code> — See the current vote count</li>
 </ul>
 <p>Night actions are sent as DMs to <code>@skeetwolf.bsky.social</code>:</p>
 <ul>

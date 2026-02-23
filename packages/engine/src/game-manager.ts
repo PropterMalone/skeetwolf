@@ -91,12 +91,17 @@ function allNight0ActionsIn(state: GameState): boolean {
 	return !hasCop || hasInvestigate;
 }
 
+/** Interval for periodic vote count posts during day phase */
+const VOTE_COUNT_INTERVAL_MS = 60 * 60 * 1000; // 1 hour
+
 export class GameManager {
 	private games = new Map<GameId, GameState>();
 	/** Maps relay group ID → member DIDs (mirrors what DmSender tracks internally) */
 	private mafiaRelayIds = new Map<GameId, string>();
 	/** Tracks which hourly boundary we last checked for Night 0 auto-advance */
 	private night0LastCheckedHour = new Map<GameId, number>();
+	/** Tracks which hourly boundary we last posted vote counts for day phases */
+	private voteCountLastPostedHour = new Map<GameId, number>();
 	private publicQueue: PublicQueue = createQueue();
 	private inviteGames = new Map<GameId, InviteGame>();
 
@@ -456,7 +461,12 @@ export class GameManager {
 				.map((p) => `@${p.handle}`)
 				.join(' ');
 
-			const text = `🐺 Skeetwolf Game #${gameId} — Day ${dayNumber}!\n\nDawn breaks. ${dawnResults}\n\nPlayers alive: ${playerList}\nDiscuss and vote! Day ends in ${formatDuration(state.config.dayDurationMs)}.`;
+			let text = `🐺 Skeetwolf Game #${gameId} — Day ${dayNumber}!\n\nDawn breaks. ${dawnResults}\n\nPlayers alive: ${playerList}\nDiscuss and vote! Day ends in ${formatDuration(state.config.dayDurationMs)}.`;
+
+			// Day 1: include feed URL so players can follow the game
+			if (dayNumber === 1) {
+				text += `\n\n📡 Follow this game: ${this.feedUrl(gameId)}`;
+			}
 
 			const previousDayUri = state.dayThreadUri;
 			const previousDayCid = state.dayThreadCid;
@@ -490,6 +500,38 @@ export class GameManager {
 
 		this.persist(state);
 		this.cleanupFinishedGame(state);
+	}
+
+	/** Format current vote tally for a game. Returns null if not in day phase. */
+	formatVoteCount(gameId: GameId): string | null {
+		const state = this.games.get(gameId);
+		if (!state || state.phase.kind !== 'day') return null;
+
+		const { counts } = tallyVotes(state);
+		const aliveCount = state.players.filter((p) => p.alive).length;
+		const majority = Math.floor(aliveCount / 2) + 1;
+
+		if (counts.size === 0) {
+			return `📊 Day ${state.phase.number} vote count — no votes yet (${majority} needed for majority)`;
+		}
+
+		const sorted = [...counts.entries()].sort((a, b) => b[1] - a[1]);
+		const lines = sorted.map(([did, n]) => {
+			const p = state.players.find((pl) => pl.did === did);
+			return `@${p?.handle ?? did}: ${n}`;
+		});
+		return `📊 Day ${state.phase.number} vote count — ${lines.join(', ')} (${majority} needed for majority)`;
+	}
+
+	/** Post the current vote count in the day thread */
+	async postVoteCount(gameId: GameId): Promise<void> {
+		const text = this.formatVoteCount(gameId);
+		if (!text) return;
+
+		const state = this.games.get(gameId);
+		if (!state) return;
+
+		await this.postInThread(state, text, 'vote_result');
 	}
 
 	/** Find the active game a player is in. Returns null if not in any game. */
@@ -585,6 +627,19 @@ export class GameManager {
 				this.night0LastCheckedHour.delete(id);
 			}
 		}
+
+		// Hourly vote count posts during day phases
+		for (const [id, state] of this.games) {
+			if (state.status !== 'active' || state.phase.kind !== 'day') continue;
+			const elapsed = now - state.phaseStartedAt;
+			const hoursPassed = Math.floor(elapsed / VOTE_COUNT_INTERVAL_MS);
+			if (hoursPassed < 1) continue; // No post in the first hour
+			const lastPostedHour = this.voteCountLastPostedHour.get(id) ?? 0;
+			if (hoursPassed <= lastPostedHour) continue;
+			this.voteCountLastPostedHour.set(id, hoursPassed);
+			console.log(`Posting hourly vote count for game ${id} (hour ${hoursPassed})`);
+			await this.postVoteCount(id);
+		}
 	}
 
 	private async announceWinner(state: GameState): Promise<void> {
@@ -606,6 +661,7 @@ export class GameManager {
 		if (state.winner) {
 			this.games.delete(state.id);
 			this.mafiaRelayIds.delete(state.id);
+			this.voteCountLastPostedHour.delete(state.id);
 		}
 	}
 
@@ -1118,6 +1174,12 @@ export class GameManager {
 	async replyNoGame(text: string, parentUri: string, parentCid: string): Promise<void> {
 		const replyLabels = POST_KIND_LABELS.reply;
 		await replyToPost(this.agent, text, parentUri, parentCid, parentUri, parentCid, replyLabels);
+	}
+
+	/** Build the bsky.app feed URL for a game */
+	private feedUrl(gameId: GameId): string {
+		const did = process.env['FEED_PUBLISHER_DID'] ?? this.agent.session?.did ?? 'unknown';
+		return `https://bsky.app/profile/${did}/feed/skeetwolf-${gameId}`;
 	}
 
 	/** Register a per-game feed with Bluesky */
