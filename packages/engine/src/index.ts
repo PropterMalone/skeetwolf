@@ -67,7 +67,6 @@ async function main() {
 		`Skeetwolf engine started as @${BOT_HANDLE}. DMs: ${useLiveDms ? 'LIVE' : 'console'}. Polling...`,
 	);
 
-	let mentionCursor: string | undefined = loadBotState(db, 'mention_cursor') ?? undefined;
 	let dmMessageId: string | undefined = loadBotState(db, 'dm_message_id') ?? undefined;
 	let backoffMs = POLL_INTERVAL_MS;
 
@@ -77,7 +76,7 @@ async function main() {
 
 	async function poll() {
 		try {
-			const { notifications, cursor: newCursor } = await pollMentions(agent, mentionCursor);
+			const { notifications } = await pollMentions(agent);
 
 			const botDid = agent.session?.did;
 			for (const mention of notifications) {
@@ -97,13 +96,6 @@ async function main() {
 					mention.authorHandle,
 					mention.text,
 				);
-			}
-
-			// Save cursor AFTER processing — if we crash mid-processing,
-			// unprocessed mentions will be re-fetched on next startup
-			if (newCursor) {
-				mentionCursor = newCursor;
-				saveBotState(db, 'mention_cursor', newCursor);
 			}
 
 			// Cap the set size to prevent unbounded memory growth

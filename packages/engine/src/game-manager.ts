@@ -46,7 +46,6 @@ import type Database from 'better-sqlite3';
 import {
 	type DmSender,
 	type ThreadReply,
-	createDayThreadgate,
 	createPostgate,
 	createThreadgate,
 	deletePostgate,
@@ -772,12 +771,8 @@ export class GameManager {
 			console.error(`Failed to create postgate for day thread ${uri}:`, err);
 		}
 
-		// Threadgate: only mentioned players (alive players in the post text) can reply
-		try {
-			await createDayThreadgate(this.agent, uri);
-		} catch (err) {
-			console.error(`Failed to create day threadgate for ${uri}:`, err);
-		}
+		// Threadgate shelved: risk of locking players out while player base is small.
+		// createDayThreadgate code exists in bot.ts — re-enable when we have more games under our belt.
 
 		// Label via external labeler
 		if (this.labeler) {

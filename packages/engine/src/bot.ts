@@ -95,33 +95,48 @@ export async function replyToPost(
 
 /**
  * Poll for new notifications (mentions).
- * Returns unread notifications since the given cursor.
+ * Always fetches from page 1 — Bluesky's listNotifications cursor is for
+ * pagination, not "after this point". We rely on isRead + the dedup set in
+ * index.ts to avoid reprocessing.
  */
 export async function pollMentions(
 	agent: AtpAgent,
-	cursor?: string,
-): Promise<{ notifications: MentionNotification[]; cursor: string | undefined }> {
-	const response = await agent.listNotifications({ cursor, limit: 50 });
-	const mentions = response.data.notifications
-		.filter((n) => (n.reason === 'mention' || n.reason === 'reply') && !n.isRead)
-		.map((n) => ({
-			uri: n.uri,
-			cid: n.cid,
-			authorDid: n.author.did,
-			authorHandle: n.author.handle,
-			text: (n.record as { text?: string }).text ?? '',
-			indexedAt: n.indexedAt,
-		}));
+): Promise<{ notifications: MentionNotification[] }> {
+	const allMentions: MentionNotification[] = [];
+	let pageCursor: string | undefined;
+
+	// Paginate until we hit read notifications or run out of pages
+	for (let page = 0; page < 5; page++) {
+		const response = await agent.listNotifications({ cursor: pageCursor, limit: 50 });
+		const notifs = response.data.notifications;
+		if (notifs.length === 0) break;
+
+		const mentions = notifs
+			.filter((n) => (n.reason === 'mention' || n.reason === 'reply') && !n.isRead)
+			.map((n) => ({
+				uri: n.uri,
+				cid: n.cid,
+				authorDid: n.author.did,
+				authorHandle: n.author.handle,
+				text: (n.record as { text?: string }).text ?? '',
+				indexedAt: n.indexedAt,
+			}));
+
+		allMentions.push(...mentions);
+
+		// If any notification on this page was already read, we've caught up
+		if (notifs.some((n) => n.isRead)) break;
+
+		pageCursor = response.data.cursor;
+		if (!pageCursor) break;
+	}
 
 	// Mark all notifications as seen so they won't be returned as unread next poll
-	if (mentions.length > 0) {
+	if (allMentions.length > 0) {
 		await agent.updateSeenNotifications();
 	}
 
-	return {
-		notifications: mentions,
-		cursor: response.data.cursor,
-	};
+	return { notifications: allMentions };
 }
 
 export interface MentionNotification {
