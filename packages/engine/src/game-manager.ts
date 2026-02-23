@@ -45,9 +45,11 @@ import type { LabelerServer } from '@skyware/labeler';
 import type Database from 'better-sqlite3';
 import {
 	type DmSender,
+	createDayThreadgate,
 	createPostgate,
 	createThreadgate,
 	deletePostgate,
+	deleteThreadgate,
 	postMessage,
 	postWithQuote,
 	replyToPost,
@@ -340,8 +342,13 @@ export class GameManager {
 				console.error(`Failed to announce winner for game ${gameId}:`, err);
 			}
 		} else {
-			// Lock the day thread
+			// Lock the day thread — delete mentionRule threadgate, replace with block-all
 			if (state.dayThreadUri) {
+				try {
+					await deleteThreadgate(this.agent, state.dayThreadUri);
+				} catch {
+					// May not exist (e.g., game started before this feature)
+				}
 				try {
 					await createThreadgate(this.agent, state.dayThreadUri);
 				} catch (err) {
@@ -640,6 +647,13 @@ export class GameManager {
 			await createPostgate(this.agent, uri);
 		} catch (err) {
 			console.error(`Failed to create postgate for day thread ${uri}:`, err);
+		}
+
+		// Threadgate: only mentioned players (alive players in the post text) can reply
+		try {
+			await createDayThreadgate(this.agent, uri);
+		} catch (err) {
+			console.error(`Failed to create day threadgate for ${uri}:`, err);
 		}
 
 		// Label via external labeler

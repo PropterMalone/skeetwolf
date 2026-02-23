@@ -2,7 +2,7 @@
  * Bluesky bot interactions — posting, DMs, mention polling.
  * Imperative shell: all ATProto I/O lives here.
  */
-import { AtpAgent } from '@atproto/api';
+import { AtpAgent, RichText } from '@atproto/api';
 
 const BLUESKY_MAX_GRAPHEMES = 300;
 
@@ -35,12 +35,25 @@ export async function createAgent(config: BotConfig): Promise<AtpAgent> {
 	return agent;
 }
 
+/** Detect @mention and link facets in text. Resolves handles → DIDs via the agent. */
+async function buildFacets(
+	agent: AtpAgent,
+	text: string,
+): Promise<{ text: string; facets: RichText['facets'] }> {
+	const rt = new RichText({ text });
+	await rt.detectFacets(agent);
+	return { text: rt.text, facets: rt.facets };
+}
+
 export async function postMessage(
 	agent: AtpAgent,
 	text: string,
 	labels?: string[],
 ): Promise<{ uri: string; cid: string }> {
-	const record: Record<string, unknown> = { text: truncateToLimit(text) };
+	const truncated = truncateToLimit(text);
+	const { facets } = await buildFacets(agent, truncated);
+	const record: Record<string, unknown> = { text: truncated };
+	if (facets?.length) record['facets'] = facets;
 	if (labels?.length) {
 		record['labels'] = {
 			$type: 'com.atproto.label.defs#selfLabels',
@@ -60,13 +73,16 @@ export async function replyToPost(
 	rootCid: string,
 	labels?: string[],
 ): Promise<{ uri: string; cid: string }> {
+	const truncated = truncateToLimit(text);
+	const { facets } = await buildFacets(agent, truncated);
 	const record: Record<string, unknown> = {
-		text: truncateToLimit(text),
+		text: truncated,
 		reply: {
 			parent: { uri: parentUri, cid: parentCid },
 			root: { uri: rootUri, cid: rootCid },
 		},
 	};
+	if (facets?.length) record['facets'] = facets;
 	if (labels?.length) {
 		record['labels'] = {
 			$type: 'com.atproto.label.defs#selfLabels',
@@ -132,13 +148,16 @@ export async function postWithQuote(
 	quotedCid: string,
 	labels?: string[],
 ): Promise<{ uri: string; cid: string }> {
+	const truncated = truncateToLimit(text);
+	const { facets } = await buildFacets(agent, truncated);
 	const record: Record<string, unknown> = {
-		text: truncateToLimit(text),
+		text: truncated,
 		embed: {
 			$type: 'app.bsky.embed.record',
 			record: { uri: quotedUri, cid: quotedCid },
 		},
 	};
+	if (facets?.length) record['facets'] = facets;
 	if (labels?.length) {
 		record['labels'] = {
 			$type: 'com.atproto.label.defs#selfLabels',
@@ -193,6 +212,36 @@ export async function deletePostgate(agent: AtpAgent, postUri: string): Promise<
 	await agent.api.com.atproto.repo.deleteRecord({
 		repo: did,
 		collection: 'app.bsky.feed.postgate',
+		rkey,
+	});
+}
+
+/** Create a threadgate that allows only mentioned users to reply (mentionRule) */
+export async function createDayThreadgate(agent: AtpAgent, postUri: string): Promise<void> {
+	const rkey = extractRkey(postUri);
+	const did = agent.session?.did;
+	if (!did) throw new Error('createDayThreadgate: no active session');
+	await agent.api.com.atproto.repo.createRecord({
+		repo: did,
+		collection: 'app.bsky.feed.threadgate',
+		rkey,
+		record: {
+			$type: 'app.bsky.feed.threadgate',
+			post: postUri,
+			allow: [{ $type: 'app.bsky.feed.threadgate#mentionRule' }],
+			createdAt: new Date().toISOString(),
+		},
+	});
+}
+
+/** Delete a threadgate record */
+export async function deleteThreadgate(agent: AtpAgent, postUri: string): Promise<void> {
+	const rkey = extractRkey(postUri);
+	const did = agent.session?.did;
+	if (!did) throw new Error('deleteThreadgate: no active session');
+	await agent.api.com.atproto.repo.deleteRecord({
+		repo: did,
+		collection: 'app.bsky.feed.threadgate',
 		rkey,
 	});
 }
