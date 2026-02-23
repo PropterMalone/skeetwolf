@@ -103,6 +103,86 @@ export interface MentionNotification {
 	indexedAt: string;
 }
 
+/** Extract the rkey (record key) from an AT URI: at://did/collection/rkey */
+export function extractRkey(uri: string): string {
+	const rkey = uri.split('/').pop();
+	if (!rkey) throw new Error(`extractRkey: invalid AT URI "${uri}"`);
+	return rkey;
+}
+
+/** Post with a quote-embed of another post */
+export async function postWithQuote(
+	agent: AtpAgent,
+	text: string,
+	quotedUri: string,
+	quotedCid: string,
+	labels?: string[],
+): Promise<{ uri: string; cid: string }> {
+	const record: Record<string, unknown> = {
+		text,
+		embed: {
+			$type: 'app.bsky.embed.record',
+			record: { uri: quotedUri, cid: quotedCid },
+		},
+	};
+	if (labels?.length) {
+		record['labels'] = {
+			$type: 'com.atproto.label.defs#selfLabels',
+			values: labels.map((val) => ({ val })),
+		};
+	}
+	const response = await agent.post(record);
+	return { uri: response.uri, cid: response.cid };
+}
+
+/** Create a threadgate that blocks all replies (allow: []) */
+export async function createThreadgate(agent: AtpAgent, postUri: string): Promise<void> {
+	const rkey = extractRkey(postUri);
+	const did = agent.session?.did;
+	if (!did) throw new Error('createThreadgate: no active session');
+	await agent.api.com.atproto.repo.createRecord({
+		repo: did,
+		collection: 'app.bsky.feed.threadgate',
+		rkey,
+		record: {
+			$type: 'app.bsky.feed.threadgate',
+			post: postUri,
+			allow: [],
+			createdAt: new Date().toISOString(),
+		},
+	});
+}
+
+/** Create a postgate that disables quote-posts */
+export async function createPostgate(agent: AtpAgent, postUri: string): Promise<void> {
+	const rkey = extractRkey(postUri);
+	const did = agent.session?.did;
+	if (!did) throw new Error('createPostgate: no active session');
+	await agent.api.com.atproto.repo.createRecord({
+		repo: did,
+		collection: 'app.bsky.feed.postgate',
+		rkey,
+		record: {
+			$type: 'app.bsky.feed.postgate',
+			post: postUri,
+			embeddingRules: [{ $type: 'app.bsky.feed.postgate#disableRule' }],
+			createdAt: new Date().toISOString(),
+		},
+	});
+}
+
+/** Delete a postgate (to temporarily allow QTs before re-creating it) */
+export async function deletePostgate(agent: AtpAgent, postUri: string): Promise<void> {
+	const rkey = extractRkey(postUri);
+	const did = agent.session?.did;
+	if (!did) throw new Error('deletePostgate: no active session');
+	await agent.api.com.atproto.repo.deleteRecord({
+		repo: did,
+		collection: 'app.bsky.feed.postgate',
+		rkey,
+	});
+}
+
 /** Resolve a Bluesky handle to a DID. Returns null if not found. */
 export async function resolveHandle(agent: AtpAgent, handle: string): Promise<string | null> {
 	try {

@@ -84,7 +84,8 @@ export type PostKind =
 	| 'death'
 	| 'game_over'
 	| 'player'
-	| 'reply';
+	| 'reply'
+	| 'day_thread';
 
 export interface GamePost {
 	uri: string;
