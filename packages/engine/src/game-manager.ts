@@ -5,6 +5,7 @@
 import type { AtpAgent } from '@atproto/api';
 import {
 	DEFAULT_CONFIG,
+	DEFAULT_FLAVOR,
 	type Did,
 	type GameId,
 	type GameState,
@@ -13,6 +14,7 @@ import {
 	type NightAction,
 	type NightActionKind,
 	type PublicQueue,
+	type Role,
 	addInviteSlot,
 	addPlayer,
 	addToQueue,
@@ -28,6 +30,8 @@ import {
 	createInviteGame,
 	createQueue,
 	eliminatePlayer,
+	flavor,
+	formatDuration,
 	inviteGameToPlayers,
 	isInviteReady,
 	isPhaseExpired,
@@ -160,6 +164,7 @@ export class GameManager {
 		const gameId = game.id;
 
 		// DM roles to all players
+		const f = DEFAULT_FLAVOR;
 		for (const player of game.players) {
 			const alignment = alignmentOf(player.role);
 			const teammates =
@@ -170,15 +175,12 @@ export class GameManager {
 							.join(', ')
 					: null;
 
-			let message = `🐺 Skeetwolf Game #${gameId}\n\nYour role: ${player.role.toUpperCase()}`;
+			const roleText = flavor(f.roleAssignment[player.role as Role], {
+				teammates: teammates ?? '',
+			});
+			let message = `🐺 Skeetwolf Game #${gameId}\n\n${roleText}`;
 			if (teammates) {
 				message += `\nYour mafia teammates: ${teammates}`;
-			}
-			if (player.role === 'cop') {
-				message += '\nEach night, DM me a handle to investigate.';
-			}
-			if (player.role === 'doctor') {
-				message += '\nEach night, DM me a handle to protect.';
 			}
 
 			await this.dm.sendDm(player.did, message);
@@ -203,7 +205,7 @@ export class GameManager {
 		for (const player of game.players) {
 			await this.dm.sendDm(
 				player.did,
-				`Night 0 has begun. Night ends in ${game.config.nightDurationMs / 3600000}h. Power roles: send your actions now.`,
+				`${flavor(f.nightStart)} Night ends in ${formatDuration(game.config.nightDurationMs)}.`,
 			);
 		}
 	}
@@ -273,17 +275,21 @@ export class GameManager {
 			state = eliminatePlayer(state, target);
 			state = applyWinCondition(state);
 
-			const role = eliminated?.role;
-			const alignment = role ? alignmentOf(role) : 'unknown';
+			const victimRole = (eliminated?.role ?? 'villager') as Role;
+			const elimText = flavor(DEFAULT_FLAVOR.dayElimination[victimRole], {
+				victim: eliminated?.handle ?? 'unknown',
+				votes: countStr,
+			});
 			await this.postInThread(
 				state,
-				`Day ${state.phase.number} results — votes: ${countStr}\n\n@${eliminated?.handle} has been eliminated. They were ${(role ?? 'unknown').toUpperCase()} (${alignment}).`,
+				`Day ${state.phase.number} results — votes: ${countStr}\n\n${elimText}`,
 				'death',
 			);
 		} else {
+			const noMajText = flavor(DEFAULT_FLAVOR.dayNoMajority, { votes: countStr });
 			await this.postInThread(
 				state,
-				`Day ${state.phase.number} results — no majority reached. Votes: ${countStr}\n\nNo one is eliminated.`,
+				`Day ${state.phase.number} results — ${noMajText}`,
 				'vote_result',
 			);
 		}
@@ -309,7 +315,7 @@ export class GameManager {
 			for (const player of alivePlayers) {
 				await this.dm.sendDm(
 					player.did,
-					`Night ${state.phase.number} begins. Power roles: send your actions via DM. Night ends in ${state.config.nightDurationMs / 3600000}h.`,
+					`${flavor(DEFAULT_FLAVOR.nightStart)} Night ends in ${formatDuration(state.config.nightDurationMs)}.`,
 				);
 			}
 		}
@@ -328,9 +334,14 @@ export class GameManager {
 
 		// DM cop result
 		if (resolution.investigated) {
+			const targetHandle =
+				state.players.find((p) => p.did === resolution.investigated?.target)?.handle ?? 'unknown';
 			await this.dm.sendDm(
 				resolution.investigated.cop,
-				`Investigation result: @${state.players.find((p) => p.did === resolution.investigated?.target)?.handle} is ${resolution.investigated.result.toUpperCase()}.`,
+				flavor(DEFAULT_FLAVOR.copResult, {
+					target: targetHandle,
+					result: resolution.investigated.result.toUpperCase(),
+				}),
 			);
 		}
 
@@ -339,14 +350,17 @@ export class GameManager {
 		if (resolution.killed) {
 			const victim = state.players.find((p) => p.did === resolution.killed);
 			state = applyWinCondition(state);
-			dawnResults = `@${victim?.handle} was found dead. They were ${victim?.role.toUpperCase()} (${victim ? alignmentOf(victim.role) : 'unknown'}).`;
+			const victimRole = (victim?.role ?? 'villager') as Role;
+			dawnResults = flavor(DEFAULT_FLAVOR.nightKill[victimRole], {
+				victim: victim?.handle ?? 'unknown',
+			});
 		} else {
-			dawnResults = 'No one died in the night.';
+			dawnResults = flavor(DEFAULT_FLAVOR.dawnPeaceful);
 		}
 
 		if (state.winner) {
 			// Post final day thread with results, then game over
-			const dayNumber = Math.floor(state.phase.number / 2) + 1;
+			const dayNumber = state.phase.number + 1;
 			const playerList = state.players
 				.filter((p) => p.alive)
 				.map((p) => `@${p.handle}`)
@@ -373,7 +387,7 @@ export class GameManager {
 				.map((p) => `@${p.handle}`)
 				.join(' ');
 
-			const text = `🐺 Skeetwolf Game #${gameId} — Day ${dayNumber}!\n\nDawn breaks. ${dawnResults}\n\nPlayers alive: ${playerList}\nDiscuss and vote! Day ends in ${state.config.dayDurationMs / 3600000}h.`;
+			const text = `🐺 Skeetwolf Game #${gameId} — Day ${dayNumber}!\n\nDawn breaks. ${dawnResults}\n\nPlayers alive: ${playerList}\nDiscuss and vote! Day ends in ${formatDuration(state.config.dayDurationMs)}.`;
 
 			const previousDayUri = state.dayThreadUri;
 			const previousDayCid = state.dayThreadCid;
@@ -483,15 +497,17 @@ export class GameManager {
 	}
 
 	private async announceWinner(state: GameState): Promise<void> {
-		const winners = state.players
+		const winnersStr = state.players
 			.filter((p) => alignmentOf(p.role) === state.winner)
 			.map((p) => `@${p.handle}`)
 			.join(', ');
-		await this.postInThread(
-			state,
-			`🏆 Game #${state.id} is over! ${state.winner?.toUpperCase()} wins!\n\nWinners: ${winners}\n\nRoles: ${state.players.map((p) => `@${p.handle} (${p.role})`).join(', ')}`,
-			'game_over',
-		);
+		const rolesStr = state.players.map((p) => `@${p.handle} (${p.role})`).join(', ');
+		const variants = state.winner === 'town' ? DEFAULT_FLAVOR.townWins : DEFAULT_FLAVOR.mafiaWins;
+		const winText = flavor(variants, {
+			winners: `Winners: ${winnersStr}`,
+			roles: `Roles: ${rolesStr}`,
+		});
+		await this.postInThread(state, `🏆 Game #${state.id} is over!\n\n${winText}`, 'game_over');
 	}
 
 	/** Remove a finished game from in-memory state (already persisted to DB) */
@@ -682,7 +698,9 @@ export class GameManager {
 		}
 
 		this.publicQueue = result.queue;
-		const entry = result.queue.entries.find((e) => e.did === did)!;
+		const entry = result.queue.entries.find((e) => e.did === did);
+		if (!entry) throw new Error(`Queue entry not found for ${did} after successful join`);
+
 		saveQueueEntry(this.db, entry);
 
 		const { minPlayers } = DEFAULT_CONFIG;
@@ -771,7 +789,7 @@ export class GameManager {
 		// Reply in queue thread: "Game starting — check your DMs!"
 		if (triggerUri && triggerCid) {
 			await this.replyNoGame(
-				`🐺 Game #${id} starting — check your DMs for your role!`,
+				`🐺 Game #${id} starting — ${flavor(DEFAULT_FLAVOR.gameStart)}`,
 				triggerUri,
 				triggerCid,
 			);
@@ -977,7 +995,7 @@ export class GameManager {
 		// Reply in invite thread: "Game starting — check your DMs!"
 		if (triggerUri && triggerCid) {
 			await this.replyNoGame(
-				`🐺 Game #${id} starting — check your DMs for your role!`,
+				`🐺 Game #${id} starting — ${flavor(DEFAULT_FLAVOR.gameStart)}`,
 				triggerUri,
 				triggerCid,
 			);
@@ -1015,7 +1033,7 @@ export class GameManager {
 				collection: 'app.bsky.feed.generator',
 				rkey: `skeetwolf-${gameId}`,
 				record: {
-					did: process.env['FEED_PUBLISHER_DID'] ?? did,
+					did: process.env.FEED_PUBLISHER_DID ?? did,
 					displayName: `Skeetwolf Game #${gameId}`,
 					description: `Follow Skeetwolf Game #${gameId} — all day threads, votes, and results.`,
 					createdAt: new Date().toISOString(),

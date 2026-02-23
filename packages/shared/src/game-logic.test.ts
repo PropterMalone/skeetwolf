@@ -75,7 +75,15 @@ describe('assignRoles', () => {
 
 		const roles = result.state.players.map((p) => p.role);
 		// 7 players with noShuffle: godfather, mafioso, cop, doctor, villager, villager, villager
-		expect(roles).toEqual(['godfather', 'mafioso', 'cop', 'doctor', 'villager', 'villager', 'villager']);
+		expect(roles).toEqual([
+			'godfather',
+			'mafioso',
+			'cop',
+			'doctor',
+			'villager',
+			'villager',
+			'villager',
+		]);
 	});
 
 	it('rejects with too few players', () => {

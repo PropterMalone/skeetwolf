@@ -33,7 +33,7 @@ describe('postWithQuote', () => {
 		]);
 
 		expect(result).toEqual({ uri: 'at://bot/post/1', cid: 'cid-1' });
-		const call = agent.post.mock.calls[0]![0];
+		const call = agent.post.mock.calls[0]?.[0];
 		expect(call.text).toBe('Day 2!');
 		expect(call.embed).toEqual({
 			$type: 'app.bsky.embed.record',
@@ -50,7 +50,7 @@ describe('postWithQuote', () => {
 		// biome-ignore lint/suspicious/noExplicitAny: test mock
 		await postWithQuote(agent as any, 'text', 'at://x/y/z', 'cid-x');
 
-		const call = agent.post.mock.calls[0]![0];
+		const call = agent.post.mock.calls[0]?.[0];
 		expect(call.labels).toBeUndefined();
 	});
 });
@@ -67,7 +67,7 @@ describe('createThreadgate', () => {
 		await createThreadgate(agent as any, 'at://did:plc:bot/app.bsky.feed.post/abc123');
 
 		expect(createRecord).toHaveBeenCalledOnce();
-		const arg = createRecord.mock.calls[0]![0];
+		const arg = createRecord.mock.calls[0]?.[0];
 		expect(arg.collection).toBe('app.bsky.feed.threadgate');
 		expect(arg.rkey).toBe('abc123');
 		expect(arg.record.post).toBe('at://did:plc:bot/app.bsky.feed.post/abc123');
@@ -93,12 +93,10 @@ describe('createPostgate', () => {
 		await createPostgate(agent as any, 'at://did:plc:bot/app.bsky.feed.post/xyz');
 
 		expect(createRecord).toHaveBeenCalledOnce();
-		const arg = createRecord.mock.calls[0]![0];
+		const arg = createRecord.mock.calls[0]?.[0];
 		expect(arg.collection).toBe('app.bsky.feed.postgate');
 		expect(arg.rkey).toBe('xyz');
-		expect(arg.record.embeddingRules).toEqual([
-			{ $type: 'app.bsky.feed.postgate#disableRule' },
-		]);
+		expect(arg.record.embeddingRules).toEqual([{ $type: 'app.bsky.feed.postgate#disableRule' }]);
 	});
 });
 
@@ -114,7 +112,7 @@ describe('deletePostgate', () => {
 		await deletePostgate(agent as any, 'at://did:plc:bot/app.bsky.feed.post/abc');
 
 		expect(deleteRecord).toHaveBeenCalledOnce();
-		const arg = deleteRecord.mock.calls[0]![0];
+		const arg = deleteRecord.mock.calls[0]?.[0];
 		expect(arg.collection).toBe('app.bsky.feed.postgate');
 		expect(arg.rkey).toBe('abc');
 	});

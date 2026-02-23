@@ -48,7 +48,7 @@ describe('public queue', () => {
 		const result = removeFromQueue(q, 'did:alice');
 		expect(result.ok).toBe(true);
 		expect(result.queue.entries).toHaveLength(1);
-		expect(result.queue.entries[0]!.did).toBe('did:bob');
+		expect(result.queue.entries[0]?.did).toBe('did:bob');
 	});
 
 	it('returns error when removing someone not in queue', () => {
@@ -84,11 +84,11 @@ describe('public queue', () => {
 
 		const { popped, queue } = popQueue(q, 3);
 		expect(popped).toHaveLength(3);
-		expect(popped[0]!.did).toBe('did:a');
-		expect(popped[1]!.did).toBe('did:b');
-		expect(popped[2]!.did).toBe('did:c');
+		expect(popped[0]?.did).toBe('did:a');
+		expect(popped[1]?.did).toBe('did:b');
+		expect(popped[2]?.did).toBe('did:c');
 		expect(queue.entries).toHaveLength(1);
-		expect(queue.entries[0]!.did).toBe('did:d');
+		expect(queue.entries[0]?.did).toBe('did:d');
 	});
 
 	it('pops all entries when count >= length', () => {
@@ -129,8 +129,8 @@ describe('invite games', () => {
 			handle: 'init.bsky.social',
 			confirmed: true,
 		});
-		expect(result.invite.slots[1]!.confirmed).toBe(false);
-		expect(result.invite.slots[2]!.confirmed).toBe(false);
+		expect(result.invite.slots[1]?.confirmed).toBe(false);
+		expect(result.invite.slots[2]?.confirmed).toBe(false);
 		expect(result.invite.status).toBe('pending');
 	});
 
@@ -302,8 +302,8 @@ describe('invite games', () => {
 			{},
 			NOW,
 		);
-		const original = invite.slots[1]!.confirmed;
+		const original = invite.slots[1]?.confirmed;
 		confirmInvite(invite, 'did:a');
-		expect(invite.slots[1]!.confirmed).toBe(original);
+		expect(invite.slots[1]?.confirmed).toBe(original);
 	});
 });
