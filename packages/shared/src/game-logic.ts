@@ -217,6 +217,11 @@ export function submitNightAction(state: GameState, action: NightAction): Action
 		return { ok: false, error: 'actor is not an alive player', state };
 	}
 
+	// No kills on Night 0 — info-gathering only
+	if (action.kind === 'kill' && state.phase.number === 0) {
+		return { ok: false, error: 'no kills on Night 0', state };
+	}
+
 	// Validate action matches role
 	if (!canPerformAction(actor.role, action.kind)) {
 		return { ok: false, error: `${actor.role} cannot perform ${action.kind}`, state };

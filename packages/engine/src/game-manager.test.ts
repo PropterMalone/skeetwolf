@@ -139,6 +139,10 @@ describe('GameManager.nightActionByHandle', () => {
 		}
 		await manager.startGame('g1');
 
+		// Advance past Night 0 (no kills allowed) → Day 1 → Night 1
+		await manager.endNight('g1');
+		await manager.endDay('g1');
+
 		// Find the actual godfather (roles are randomly shuffled)
 		const game = manager.findGameForPlayer('did:plc:p0');
 		const godfather = game?.players.find((p) => p.role === 'godfather');
