@@ -250,11 +250,7 @@ async function handleMention(
 				);
 				break;
 			}
-			const { error, majorityReached } = await manager.voteAndCheckMajority(
-				voteGameId,
-				authorDid,
-				targetDid,
-			);
+			const { error } = await manager.voteAndCheckMajority(voteGameId, authorDid, targetDid);
 			if (error) {
 				console.log(`Vote failed: ${error}`);
 				await manager.reply(voteGameId, error, postUri, postCid);
@@ -262,11 +258,6 @@ async function handleMention(
 				const targetHandle = cmd.targetHandle;
 				console.log(`${authorHandle} voted for @${targetHandle} in game ${voteGameId}`);
 				manager.recordPlayerPost(voteGameId, postUri, authorDid);
-				let replyText = `Vote recorded: @${authorHandle} → @${targetHandle}`;
-				if (majorityReached) {
-					replyText += ' — majority reached!';
-				}
-				await manager.reply(voteGameId, replyText, postUri, postCid);
 			}
 			break;
 		}
@@ -286,7 +277,6 @@ async function handleMention(
 				await manager.reply(unvoteGameId, error, postUri, postCid);
 			} else {
 				console.log(`${authorHandle} unvoted in game ${unvoteGameId}`);
-				await manager.reply(unvoteGameId, 'Vote withdrawn', postUri, postCid);
 			}
 			break;
 		}
