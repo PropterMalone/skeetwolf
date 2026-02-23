@@ -256,6 +256,54 @@ export async function resolveHandle(agent: AtpAgent, handle: string): Promise<st
 	}
 }
 
+/** Reply in a thread — author DID, handle, and text */
+export interface ThreadReply {
+	uri: string;
+	authorDid: string;
+	authorHandle: string;
+	text: string;
+}
+
+/** Fetch all replies in a thread tree (walks nested replies recursively) */
+export async function getThreadReplies(agent: AtpAgent, postUri: string): Promise<ThreadReply[]> {
+	const response = await agent.api.app.bsky.feed.getPostThread({
+		uri: postUri,
+		depth: 6,
+	});
+
+	const thread = response.data.thread;
+	if (thread.$type !== 'app.bsky.feed.defs#threadViewPost') return [];
+
+	type ThreadNode = {
+		$type?: string;
+		post?: {
+			uri?: string;
+			author?: { did?: string; handle?: string };
+			record?: { text?: string };
+		};
+		replies?: ThreadNode[];
+	};
+
+	const replies: ThreadReply[] = [];
+	function walk(nodes: unknown[]): void {
+		for (const node of nodes) {
+			const r = node as ThreadNode;
+			if (r.$type !== 'app.bsky.feed.defs#threadViewPost' || !r.post) continue;
+			replies.push({
+				uri: r.post.uri ?? '',
+				authorDid: r.post.author?.did ?? '',
+				authorHandle: r.post.author?.handle ?? '',
+				text: r.post.record?.text ?? '',
+			});
+			if (Array.isArray(r.replies)) walk(r.replies);
+		}
+	}
+
+	const threadView = thread as ThreadNode;
+	if (Array.isArray(threadView.replies)) walk(threadView.replies);
+	return replies;
+}
+
 // DM support moved to dm.ts — re-export for convenience
 export type { DmSender, InboundDm } from './dm.js';
 export {

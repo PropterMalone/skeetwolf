@@ -45,16 +45,19 @@ import type { LabelerServer } from '@skyware/labeler';
 import type Database from 'better-sqlite3';
 import {
 	type DmSender,
+	type ThreadReply,
 	createDayThreadgate,
 	createPostgate,
 	createThreadgate,
 	deletePostgate,
 	deleteThreadgate,
+	getThreadReplies,
 	postMessage,
 	postWithQuote,
 	replyToPost,
 	resolveHandle,
 } from './bot.js';
+import { parseMention } from './command-parser.js';
 import {
 	type PostKind,
 	clearQueueEntries,
@@ -118,7 +121,8 @@ export class GameManager {
 	}
 
 	/** Load all active games, queue, and invites from the database into memory */
-	hydrate(): void {
+	async hydrate(): Promise<void> {
+		const now = Date.now();
 		const active = loadActiveGames(this.db);
 		for (const game of active) {
 			this.games.set(game.id, game);
@@ -133,6 +137,15 @@ export class GameManager {
 					mafiaPlayers.map((p) => p.did),
 				);
 			}
+
+			// Catch up hourly trackers so we don't retroactively post on restart
+			if (game.phase.kind === 'day') {
+				const elapsed = now - game.phaseStartedAt;
+				const hoursPassed = Math.floor(elapsed / VOTE_COUNT_INTERVAL_MS);
+				if (hoursPassed >= 1) {
+					this.voteCountLastPostedHour.set(game.id, hoursPassed);
+				}
+			}
 		}
 
 		this.publicQueue = loadPublicQueue(this.db);
@@ -145,6 +158,58 @@ export class GameManager {
 		console.log(
 			`Hydrated ${active.length} game(s), ${this.publicQueue.entries.length} queued player(s), ${invites.length} invite(s)`,
 		);
+
+		// Rehydrate votes from Bluesky threads for active day-phase games
+		for (const game of active) {
+			if (game.phase.kind === 'day' && game.dayThreadUri) {
+				await this.rehydrateVotes(game.id, game.dayThreadUri);
+			}
+		}
+	}
+
+	/** Rebuild vote state from the Bluesky day thread. Replays vote/unvote commands
+	 *  from thread replies into game state, making the thread the source of truth. */
+	private async rehydrateVotes(gameId: GameId, dayThreadUri: string): Promise<void> {
+		let replies: ThreadReply[];
+		try {
+			replies = await getThreadReplies(this.agent, dayThreadUri);
+		} catch (err) {
+			console.error(`Failed to fetch thread for vote rehydration (game ${gameId}):`, err);
+			return;
+		}
+
+		const botDid = this.agent.session?.did;
+		const botHandle = this.agent.session?.handle;
+		let state = this.games.get(gameId);
+		if (!state) return;
+
+		let rehydrated = 0;
+		for (const reply of replies) {
+			// Skip bot's own posts
+			if (reply.authorDid === botDid) continue;
+
+			const cmd = parseMention(reply.text, botHandle);
+			if (cmd.kind === 'vote') {
+				const targetDid = this.resolveHandleInGame(gameId, cmd.targetHandle);
+				if (!targetDid) continue;
+				const result = castVote(state, reply.authorDid, targetDid);
+				if (result.ok) {
+					state = result.state;
+					rehydrated++;
+				}
+			} else if (cmd.kind === 'unvote') {
+				const result = castVote(state, reply.authorDid, null);
+				if (result.ok) {
+					state = result.state;
+					rehydrated++;
+				}
+			}
+		}
+
+		if (rehydrated > 0) {
+			this.persist(state);
+			console.log(`Rehydrated ${rehydrated} vote(s) for game ${gameId} from thread`);
+		}
 	}
 
 	/** Create a new game and announce it (manual flow — signup post, not day thread) */
@@ -637,6 +702,8 @@ export class GameManager {
 			const lastPostedHour = this.voteCountLastPostedHour.get(id) ?? 0;
 			if (hoursPassed <= lastPostedHour) continue;
 			this.voteCountLastPostedHour.set(id, hoursPassed);
+			// Skip auto-post when no votes have been cast (just noise)
+			if (state.votes.length === 0) continue;
 			console.log(`Posting hourly vote count for game ${id} (hour ${hoursPassed})`);
 			await this.postVoteCount(id);
 		}

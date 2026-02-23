@@ -52,7 +52,7 @@ async function main() {
 			: null;
 
 	const manager = new GameManager(db, agent, dm, labeler);
-	manager.hydrate();
+	await manager.hydrate();
 
 	// Graceful shutdown — close DB on SIGTERM/SIGINT (Docker sends SIGTERM on stop)
 	for (const signal of ['SIGTERM', 'SIGINT'] as const) {
@@ -78,10 +78,6 @@ async function main() {
 	async function poll() {
 		try {
 			const { notifications, cursor: newCursor } = await pollMentions(agent, mentionCursor);
-			if (newCursor) {
-				mentionCursor = newCursor;
-				saveBotState(db, 'mention_cursor', newCursor);
-			}
 
 			const botDid = agent.session?.did;
 			for (const mention of notifications) {
@@ -103,6 +99,13 @@ async function main() {
 				);
 			}
 
+			// Save cursor AFTER processing — if we crash mid-processing,
+			// unprocessed mentions will be re-fetched on next startup
+			if (newCursor) {
+				mentionCursor = newCursor;
+				saveBotState(db, 'mention_cursor', newCursor);
+			}
+
 			// Cap the set size to prevent unbounded memory growth
 			if (processedMentionUris.size > 1000) {
 				const toDelete = [...processedMentionUris].slice(0, 500);
@@ -111,13 +114,15 @@ async function main() {
 
 			if (chatAgent) {
 				const { messages, latestMessageId } = await pollInboundDms(chatAgent, dmMessageId);
-				if (latestMessageId) {
-					dmMessageId = latestMessageId;
-					saveBotState(db, 'dm_message_id', latestMessageId);
-				}
 
 				for (const msg of messages) {
 					await handleDm(manager, dm, msg.senderDid, msg.text);
+				}
+
+				// Save DM cursor AFTER processing
+				if (latestMessageId) {
+					dmMessageId = latestMessageId;
+					saveBotState(db, 'dm_message_id', latestMessageId);
 				}
 			}
 

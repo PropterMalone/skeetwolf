@@ -558,7 +558,7 @@ describe('full game flow', () => {
 		const agent2 = createMockAgent();
 		const dm2 = createMockDm();
 		const manager2 = new GameManager(db, agent2, dm2.sender);
-		manager2.hydrate();
+		await manager2.hydrate();
 
 		await manager2.tick(Date.now());
 
@@ -582,7 +582,7 @@ describe('full game flow', () => {
 		const agent2 = createMockAgent();
 		const dm2 = createMockDm();
 		const manager2 = new GameManager(db, agent2, dm2.sender);
-		manager2.hydrate();
+		await manager2.hydrate();
 
 		const reloaded = must(manager2.findGameForPlayer('did:plc:p0'), 'rehydrated game');
 		expect(reloaded.id).toBe('hy1');
