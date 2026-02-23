@@ -11,11 +11,12 @@
  * the game ID from the rkey (the part after the last slash).
  */
 import { createServer } from 'node:http';
+import { FAQ_HTML } from './faq.js';
 import { createFeedHandler } from './handler.js';
 
-const PORT = Number(process.env['FEED_PORT']) || 3001;
-const DB_PATH = process.env['DB_PATH'] || '../engine/skeetwolf.db';
-const PUBLISHER_DID = process.env['FEED_PUBLISHER_DID'] ?? 'did:web:skeetwolf.example';
+const PORT = Number(process.env.FEED_PORT) || 3001;
+const DB_PATH = process.env.DB_PATH || '../engine/skeetwolf.db';
+const PUBLISHER_DID = process.env.FEED_PUBLISHER_DID ?? 'did:web:skeetwolf.example';
 
 const handler = createFeedHandler(DB_PATH, PUBLISHER_DID);
 
@@ -47,7 +48,7 @@ const server = createServer(async (req, res) => {
 	}
 
 	if (url.pathname === '/.well-known/did.json') {
-		const hostname = process.env['FEED_HOSTNAME'] ?? 'localhost';
+		const hostname = process.env.FEED_HOSTNAME ?? 'localhost';
 		res.writeHead(200, { 'Content-Type': 'application/json' });
 		res.end(
 			JSON.stringify({
@@ -62,6 +63,12 @@ const server = createServer(async (req, res) => {
 				],
 			}),
 		);
+		return;
+	}
+
+	if (url.pathname === '/faq') {
+		res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' });
+		res.end(FAQ_HTML);
 		return;
 	}
 

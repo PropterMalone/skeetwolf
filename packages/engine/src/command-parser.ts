@@ -56,9 +56,7 @@ export function parseMention(rawText: string, botHandle?: string): MentionComman
 	}
 
 	// Queue commands — status checks before join/leave
-	if (
-		/queue\s*\?|queue\s+status|who.s\s+(in\s+)?(the\s+)?queue/i.test(lower)
-	) {
+	if (/queue\s*\?|queue\s+status|who.s\s+(in\s+)?(the\s+)?queue/i.test(lower)) {
 		return { kind: 'queue_status' };
 	}
 	if (lower.includes('leave queue') || lower.includes('unqueue')) {

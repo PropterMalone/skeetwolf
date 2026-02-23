@@ -82,6 +82,14 @@ export const DEFAULT_CONFIG: GameConfig = {
 	signupDurationMs: 24 * 60 * 60 * 1000, // 24 hours
 };
 
+/** Format milliseconds as a human-readable duration (e.g., "24 hours", "30 minutes") */
+export function formatDuration(ms: number): string {
+	const minutes = Math.round(ms / 60_000);
+	if (minutes < 60) return `${minutes} minute${minutes !== 1 ? 's' : ''}`;
+	const hours = Math.round(ms / 3_600_000);
+	return `${hours} hour${hours !== 1 ? 's' : ''}`;
+}
+
 // -- Public Queue --
 
 export interface QueueEntry {

@@ -21,16 +21,16 @@ const POLL_INTERVAL_MS = 30_000;
 const MAX_BACKOFF_MS = 5 * 60 * 1000;
 
 async function main() {
-	const identifier = process.env['BSKY_IDENTIFIER'];
-	const password = process.env['BSKY_PASSWORD'];
-	const useLiveDms = process.env['LIVE_DMS'] === '1';
+	const identifier = process.env.BSKY_IDENTIFIER;
+	const password = process.env.BSKY_PASSWORD;
+	const useLiveDms = process.env.LIVE_DMS === '1';
 
 	if (!identifier || !password) {
 		console.error('Set BSKY_IDENTIFIER and BSKY_PASSWORD environment variables');
 		process.exit(1);
 	}
 
-	const db = openDatabase(process.env['DB_PATH'] || 'skeetwolf.db');
+	const db = openDatabase(process.env.DB_PATH || 'skeetwolf.db');
 	const agent = await createAgent({ identifier, password });
 
 	if (agent.session?.handle) {
@@ -40,11 +40,11 @@ async function main() {
 	const dm = useLiveDms ? createBlueskyDmSender(createChatAgent(agent)) : createConsoleDmSender();
 	const chatAgent = useLiveDms ? createChatAgent(agent) : null;
 
-	const labelerDid = process.env['LABELER_DID'];
-	const labelerKey = process.env['LABELER_SIGNING_KEY'];
+	const labelerDid = process.env.LABELER_DID;
+	const labelerKey = process.env.LABELER_SIGNING_KEY;
 	const labeler =
 		labelerDid && labelerKey
-			? createLabeler(labelerDid, labelerKey, Number(process.env['LABELER_PORT'] || 3002))
+			? createLabeler(labelerDid, labelerKey, Number(process.env.LABELER_PORT || 3002))
 			: null;
 
 	const manager = new GameManager(db, agent, dm, labeler);
@@ -117,7 +117,7 @@ async function main() {
 			if (isAuthError(err)) {
 				console.log('Auth error detected, refreshing session...');
 				try {
-					await agent.login({ identifier: identifier!, password: password! });
+					await agent.login({ identifier: identifier as string, password: password as string });
 					console.log('Session refreshed');
 				} catch (loginErr) {
 					console.error('Session refresh failed:', loginErr);

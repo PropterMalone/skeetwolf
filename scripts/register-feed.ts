@@ -10,10 +10,10 @@
 import { AtpAgent } from '@atproto/api';
 
 async function main() {
-	const identifier = process.env['BSKY_IDENTIFIER'];
-	const password = process.env['BSKY_PASSWORD'];
-	const publisherDid = process.env['FEED_PUBLISHER_DID'];
-	const feedHostname = process.env['FEED_HOSTNAME'];
+	const identifier = process.env.BSKY_IDENTIFIER;
+	const password = process.env.BSKY_PASSWORD;
+	const publisherDid = process.env.FEED_PUBLISHER_DID;
+	const feedHostname = process.env.FEED_HOSTNAME;
 
 	if (!identifier || !password || !publisherDid || !feedHostname) {
 		console.error(

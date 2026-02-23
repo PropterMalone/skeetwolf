@@ -146,7 +146,7 @@ describe('GameManager.nightActionByHandle', () => {
 		expect(godfather).toBeDefined();
 		expect(townPlayer).toBeDefined();
 
-		const error = manager.nightActionByHandle('g1', godfather!.did, 'kill', townPlayer!.handle);
+		const error = manager.nightActionByHandle('g1', godfather?.did, 'kill', townPlayer?.handle);
 		expect(error).toBeNull();
 	});
 
@@ -180,7 +180,7 @@ describe('GameManager.relayMafiaChat', () => {
 		expect(mafiaPlayer).toBeDefined();
 
 		dm.relayed.length = 0; // clear relay messages from startGame
-		const error = await manager.relayMafiaChat(mafiaPlayer!.did, 'lets get someone');
+		const error = await manager.relayMafiaChat(mafiaPlayer?.did, 'lets get someone');
 		expect(error).toBeNull();
 		expect(dm.relayed).toHaveLength(1);
 		expect(dm.relayed[0]?.text).toContain('lets get someone');
@@ -201,7 +201,7 @@ describe('GameManager.relayMafiaChat', () => {
 		const townPlayer = game?.players.find((p) => alignmentOf(p.role) === 'town');
 		expect(townPlayer).toBeDefined();
 
-		const error = await manager.relayMafiaChat(townPlayer!.did, 'hello');
+		const error = await manager.relayMafiaChat(townPlayer?.did, 'hello');
 		expect(error).toBe('not a mafia member');
 	});
 
@@ -243,7 +243,7 @@ describe('GameManager.voteAndCheckMajority', () => {
 		const { manager, townPlayers, mafiaPlayer } = await setupDayPhaseGame();
 
 		// Cast one vote — not enough for majority
-		const result = await manager.voteAndCheckMajority('g1', townPlayers[0]!.did, mafiaPlayer.did);
+		const result = await manager.voteAndCheckMajority('g1', townPlayers[0]?.did, mafiaPlayer.did);
 		expect(result.error).toBeNull();
 		expect(result.majorityReached).toBe(false);
 	});
@@ -421,7 +421,7 @@ describe('GameManager cleanup after game over', () => {
 
 		// Vote out first mafia member
 		for (const p of townPlayers) {
-			await manager.voteAndCheckMajority('g1', p.did, mafiaPlayers[0]!.did);
+			await manager.voteAndCheckMajority('g1', p.did, mafiaPlayers[0]?.did);
 		}
 
 		// If game still exists (mafia had 2 members), advance to day and vote out second
@@ -433,7 +433,7 @@ describe('GameManager cleanup after game over', () => {
 					(p) => alignmentOf(p.role) === 'town' && p.alive,
 				);
 				for (const p of aliveTown) {
-					await manager.voteAndCheckMajority('g1', p.did, mafiaPlayers[1]!.did);
+					await manager.voteAndCheckMajority('g1', p.did, mafiaPlayers[1]?.did);
 				}
 			}
 		}

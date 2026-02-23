@@ -6,7 +6,7 @@ import { LabelerServer } from '@skyware/labeler';
 
 export function createLabeler(did: string, signingKey: string, port: number): LabelerServer {
 	const server = new LabelerServer({ did, signingKey });
-	server.start(port, (error, address) => {
+	server.start({ port, host: '0.0.0.0' }, (error: Error | null, address: string) => {
 		if (error) {
 			console.error('Labeler server failed to start:', error);
 		} else {
