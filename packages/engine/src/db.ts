@@ -132,14 +132,6 @@ export function getGamePosts(
 	}));
 }
 
-/** Get all active game IDs (for feed discovery) */
-export function getActiveGameIds(db: Database.Database): string[] {
-	const rows = db
-		.prepare("SELECT id FROM games WHERE json_extract(state, '$.status') != 'finished'")
-		.all() as { id: string }[];
-	return rows.map((r) => r.id);
-}
-
 export function saveBotState(db: Database.Database, key: string, value: string): void {
 	db.prepare('INSERT OR REPLACE INTO bot_state (key, value) VALUES (?, ?)').run(key, value);
 }

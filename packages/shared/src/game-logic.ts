@@ -222,6 +222,11 @@ export function submitNightAction(state: GameState, action: NightAction): Action
 		return { ok: false, error: `${actor.role} cannot perform ${action.kind}`, state };
 	}
 
+	// Doctor cannot protect themselves
+	if (action.kind === 'protect' && action.target === action.actor) {
+		return { ok: false, error: 'you cannot protect yourself', state };
+	}
+
 	// Replace any existing action from this actor
 	const otherActions = state.nightActions.filter((a) => a.actor !== action.actor);
 

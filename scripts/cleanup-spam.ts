@@ -29,7 +29,6 @@ async function main() {
 
 		for (const item of posts) {
 			const uri = item.post.uri;
-			const _rkey = uri.split('/').pop();
 			console.log(`Deleting: ${uri}`);
 			await agent.deletePost(uri);
 			deleted++;

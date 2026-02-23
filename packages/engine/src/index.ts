@@ -20,6 +20,10 @@ let BOT_HANDLE = 'skeetwolf.bsky.social';
 const POLL_INTERVAL_MS = 30_000;
 const MAX_BACKOFF_MS = 5 * 60 * 1000;
 
+process.on('unhandledRejection', (err) => {
+	console.error('Unhandled rejection:', err);
+});
+
 async function main() {
 	const identifier = process.env.BSKY_IDENTIFIER;
 	const password = process.env.BSKY_PASSWORD;
@@ -49,6 +53,15 @@ async function main() {
 
 	const manager = new GameManager(db, agent, dm, labeler);
 	manager.hydrate();
+
+	// Graceful shutdown — close DB on SIGTERM/SIGINT (Docker sends SIGTERM on stop)
+	for (const signal of ['SIGTERM', 'SIGINT'] as const) {
+		process.on(signal, () => {
+			console.log(`${signal} received, shutting down...`);
+			db.close();
+			process.exit(0);
+		});
+	}
 
 	console.log(
 		`Skeetwolf engine started as @${BOT_HANDLE}. DMs: ${useLiveDms ? 'LIVE' : 'console'}. Polling...`,
@@ -205,18 +218,27 @@ async function handleMention(
 			break;
 		}
 		case 'vote': {
-			if (!cmd.gameId) {
-				console.log(`Vote from ${authorHandle} missing game ID`);
-				break;
+			let voteGameId = cmd.gameId;
+			if (!voteGameId) {
+				const game = manager.findGameForPlayer(authorDid);
+				if (!game) {
+					await manager.replyNoGame(
+						'Include a game ID (e.g., "vote #abc @player") or join a game first.',
+						postUri,
+						postCid,
+					);
+					break;
+				}
+				voteGameId = game.id;
 			}
-			let targetDid = manager.resolveHandleInGame(cmd.gameId, cmd.targetHandle);
+			let targetDid = manager.resolveHandleInGame(voteGameId, cmd.targetHandle);
 			if (!targetDid) {
 				targetDid = await resolveHandle(agent, cmd.targetHandle);
 			}
 			if (!targetDid) {
 				console.log(`Could not resolve handle: ${cmd.targetHandle}`);
 				await manager.reply(
-					cmd.gameId,
+					voteGameId,
 					`Could not resolve handle: @${cmd.targetHandle}`,
 					postUri,
 					postCid,
@@ -224,37 +246,42 @@ async function handleMention(
 				break;
 			}
 			const { error, majorityReached } = await manager.voteAndCheckMajority(
-				cmd.gameId,
+				voteGameId,
 				authorDid,
 				targetDid,
 			);
 			if (error) {
 				console.log(`Vote failed: ${error}`);
-				await manager.reply(cmd.gameId, error, postUri, postCid);
+				await manager.reply(voteGameId, error, postUri, postCid);
 			} else {
 				const targetHandle = cmd.targetHandle;
-				console.log(`${authorHandle} voted for @${targetHandle} in game ${cmd.gameId}`);
-				manager.recordPlayerPost(cmd.gameId, postUri, authorDid);
+				console.log(`${authorHandle} voted for @${targetHandle} in game ${voteGameId}`);
+				manager.recordPlayerPost(voteGameId, postUri, authorDid);
 				let replyText = `Vote recorded: @${authorHandle} → @${targetHandle}`;
 				if (majorityReached) {
 					replyText += ' — majority reached!';
 				}
-				await manager.reply(cmd.gameId, replyText, postUri, postCid);
+				await manager.reply(voteGameId, replyText, postUri, postCid);
 			}
 			break;
 		}
 		case 'unvote': {
-			if (!cmd.gameId) {
-				console.log(`Unvote from ${authorHandle} missing game ID`);
-				break;
+			let unvoteGameId = cmd.gameId;
+			if (!unvoteGameId) {
+				const game = manager.findGameForPlayer(authorDid);
+				if (!game) {
+					await manager.replyNoGame('Include a game ID or join a game first.', postUri, postCid);
+					break;
+				}
+				unvoteGameId = game.id;
 			}
-			const error = manager.vote(cmd.gameId, authorDid, null);
+			const error = manager.vote(unvoteGameId, authorDid, null);
 			if (error) {
 				console.log(`Unvote failed: ${error}`);
-				await manager.reply(cmd.gameId, error, postUri, postCid);
+				await manager.reply(unvoteGameId, error, postUri, postCid);
 			} else {
-				console.log(`${authorHandle} unvoted in game ${cmd.gameId}`);
-				await manager.reply(cmd.gameId, 'Vote withdrawn', postUri, postCid);
+				console.log(`${authorHandle} unvoted in game ${unvoteGameId}`);
+				await manager.reply(unvoteGameId, 'Vote withdrawn', postUri, postCid);
 			}
 			break;
 		}
@@ -323,6 +350,7 @@ async function handleDm(
 				await dm.sendDm(senderDid, error);
 			} else {
 				console.log(`${senderDid}: ${cmd.kind} @${cmd.targetHandle} in game ${game.id}`);
+				await dm.sendDm(senderDid, `Action received: ${cmd.kind} @${cmd.targetHandle}`);
 			}
 			break;
 		}

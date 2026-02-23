@@ -102,6 +102,17 @@ export class GameManager {
 		const active = loadActiveGames(this.db);
 		for (const game of active) {
 			this.games.set(game.id, game);
+
+			// Rebuild mafia relay groups for active games
+			const mafiaPlayers = game.players.filter((p) => p.alive && alignmentOf(p.role) === 'mafia');
+			if (mafiaPlayers.length > 1) {
+				const relayId = `mafia-${game.id}`;
+				this.mafiaRelayIds.set(game.id, relayId);
+				this.dm.createRelayGroup(
+					relayId,
+					mafiaPlayers.map((p) => p.did),
+				);
+			}
 		}
 
 		this.publicQueue = loadPublicQueue(this.db);
@@ -274,28 +285,42 @@ export class GameManager {
 			const eliminated = state.players.find((p) => p.did === target);
 			state = eliminatePlayer(state, target);
 			state = applyWinCondition(state);
+			// Persist after game logic mutations, before any API calls
+			this.persist(state);
 
 			const victimRole = (eliminated?.role ?? 'villager') as Role;
 			const elimText = flavor(DEFAULT_FLAVOR.dayElimination[victimRole], {
 				victim: eliminated?.handle ?? 'unknown',
 				votes: countStr,
 			});
-			await this.postInThread(
-				state,
-				`Day ${state.phase.number} results — votes: ${countStr}\n\n${elimText}`,
-				'death',
-			);
+			try {
+				await this.postInThread(
+					state,
+					`Day ${state.phase.number} results — votes: ${countStr}\n\n${elimText}`,
+					'death',
+				);
+			} catch (err) {
+				console.error(`Failed to post day results for game ${gameId}:`, err);
+			}
 		} else {
 			const noMajText = flavor(DEFAULT_FLAVOR.dayNoMajority, { votes: countStr });
-			await this.postInThread(
-				state,
-				`Day ${state.phase.number} results — ${noMajText}`,
-				'vote_result',
-			);
+			try {
+				await this.postInThread(
+					state,
+					`Day ${state.phase.number} results — ${noMajText}`,
+					'vote_result',
+				);
+			} catch (err) {
+				console.error(`Failed to post no-majority results for game ${gameId}:`, err);
+			}
 		}
 
 		if (state.winner) {
-			await this.announceWinner(state);
+			try {
+				await this.announceWinner(state);
+			} catch (err) {
+				console.error(`Failed to announce winner for game ${gameId}:`, err);
+			}
 		} else {
 			// Lock the day thread
 			if (state.dayThreadUri) {
@@ -313,10 +338,14 @@ export class GameManager {
 			// DM night announcement instead of public post
 			const alivePlayers = state.players.filter((p) => p.alive);
 			for (const player of alivePlayers) {
-				await this.dm.sendDm(
-					player.did,
-					`${flavor(DEFAULT_FLAVOR.nightStart)} Night ends in ${formatDuration(state.config.nightDurationMs)}.`,
-				);
+				try {
+					await this.dm.sendDm(
+						player.did,
+						`${flavor(DEFAULT_FLAVOR.nightStart)} Night ends in ${formatDuration(state.config.nightDurationMs)}.`,
+					);
+				} catch (err) {
+					console.error(`Failed to DM night start to ${player.did}:`, err);
+				}
 			}
 		}
 
@@ -332,20 +361,7 @@ export class GameManager {
 		const resolution = resolveNight(state);
 		state = resolution.state;
 
-		// DM cop result
-		if (resolution.investigated) {
-			const targetHandle =
-				state.players.find((p) => p.did === resolution.investigated?.target)?.handle ?? 'unknown';
-			await this.dm.sendDm(
-				resolution.investigated.cop,
-				flavor(DEFAULT_FLAVOR.copResult, {
-					target: targetHandle,
-					result: resolution.investigated.result.toUpperCase(),
-				}),
-			);
-		}
-
-		// Build dawn results text
+		// Build dawn results text (before any API calls)
 		let dawnResults: string;
 		if (resolution.killed) {
 			const victim = state.players.find((p) => p.did === resolution.killed);
@@ -358,6 +374,26 @@ export class GameManager {
 			dawnResults = flavor(DEFAULT_FLAVOR.dawnPeaceful);
 		}
 
+		// Persist after game logic mutations, before any API calls
+		this.persist(state);
+
+		// DM cop result (non-fatal)
+		if (resolution.investigated) {
+			const targetHandle =
+				state.players.find((p) => p.did === resolution.investigated?.target)?.handle ?? 'unknown';
+			try {
+				await this.dm.sendDm(
+					resolution.investigated.cop,
+					flavor(DEFAULT_FLAVOR.copResult, {
+						target: targetHandle,
+						result: resolution.investigated.result.toUpperCase(),
+					}),
+				);
+			} catch (err) {
+				console.error(`Failed to DM cop result for game ${gameId}:`, err);
+			}
+		}
+
 		if (state.winner) {
 			// Post final day thread with results, then game over
 			const dayNumber = state.phase.number + 1;
@@ -368,16 +404,24 @@ export class GameManager {
 			const text = `🐺 Skeetwolf Game #${gameId} — Day ${dayNumber}\n\nDawn breaks. ${dawnResults}\n\nPlayers alive: ${playerList}`;
 			const previousDayUri = state.dayThreadUri;
 			const previousDayCid = state.dayThreadCid;
-			const { uri, cid } = await this.postDayThread(
-				state,
-				text,
-				previousDayUri ?? undefined,
-				previousDayCid ?? undefined,
-			);
-			state = { ...state, dayThreadUri: uri, dayThreadCid: cid };
-			this.persist(state);
+			try {
+				const { uri, cid } = await this.postDayThread(
+					state,
+					text,
+					previousDayUri ?? undefined,
+					previousDayCid ?? undefined,
+				);
+				state = { ...state, dayThreadUri: uri, dayThreadCid: cid };
+				this.persist(state);
+			} catch (err) {
+				console.error(`Failed to post final day thread for game ${gameId}:`, err);
+			}
 
-			await this.announceWinner(state);
+			try {
+				await this.announceWinner(state);
+			} catch (err) {
+				console.error(`Failed to announce winner for game ${gameId}:`, err);
+			}
 		} else {
 			state = advancePhase(state);
 			const dayNumber = state.phase.number;
@@ -392,21 +436,25 @@ export class GameManager {
 			const previousDayUri = state.dayThreadUri;
 			const previousDayCid = state.dayThreadCid;
 
-			const { uri, cid } = await this.postDayThread(
-				state,
-				text,
-				previousDayUri ?? undefined,
-				previousDayCid ?? undefined,
-			);
-			state = {
-				...state,
-				dayThreadUri: uri,
-				dayThreadCid: cid,
-			};
+			try {
+				const { uri, cid } = await this.postDayThread(
+					state,
+					text,
+					previousDayUri ?? undefined,
+					previousDayCid ?? undefined,
+				);
+				state = {
+					...state,
+					dayThreadUri: uri,
+					dayThreadCid: cid,
+				};
 
-			// Day 1 = game announcement post; set announcementUri if not already set
-			if (!state.announcementUri) {
-				state = { ...state, announcementUri: uri, announcementCid: cid };
+				// Day 1 = game announcement post; set announcementUri if not already set
+				if (!state.announcementUri) {
+					state = { ...state, announcementUri: uri, announcementCid: cid };
+				}
+			} catch (err) {
+				console.error(`Failed to post day thread for game ${gameId}:`, err);
 			}
 
 			// Register per-game feed on Day 1

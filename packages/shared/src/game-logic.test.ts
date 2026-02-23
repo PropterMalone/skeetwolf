@@ -205,6 +205,17 @@ describe('night actions', () => {
 		expect(resolution.state.players.find((p) => p.did === 'did:plc:player4')?.alive).toBe(true);
 	});
 
+	it('rejects doctor self-protection', () => {
+		const state = nightGame();
+		const result = submitNightAction(state, {
+			actor: 'did:plc:player3', // doctor
+			kind: 'protect',
+			target: 'did:plc:player3', // self
+		});
+		expect(result.ok).toBe(false);
+		expect(result.error).toContain('cannot protect yourself');
+	});
+
 	it('godfather appears town to cop', () => {
 		let state = nightGame();
 		state = submitNightAction(state, {
