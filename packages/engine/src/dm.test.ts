@@ -153,7 +153,7 @@ describe('createBlueskyDmSender', () => {
 describe('pollInboundDms', () => {
 	it('throws if agent not authenticated', async () => {
 		const mock = createMockChatAgent();
-		(mock as Record<string, unknown>).session = undefined;
+		(mock as Record<string, unknown>)['session'] = undefined;
 
 		await expect(pollInboundDms(mock as unknown as AtpAgent)).rejects.toThrow(
 			'chat agent not authenticated',

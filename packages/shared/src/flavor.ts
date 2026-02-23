@@ -190,7 +190,7 @@ export const DEFAULT_FLAVOR: FlavorPack = {
 
 /** Pick a random variant from an array */
 export function pickFlavor(variants: string[]): string {
-	return variants[Math.floor(Math.random() * variants.length)] ?? variants[0];
+	return variants[Math.floor(Math.random() * variants.length)] ?? '';
 }
 
 /** Fill placeholders in a flavor string */
