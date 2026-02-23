@@ -78,6 +78,18 @@ const POST_KIND_LABELS: Record<PostKind, string[]> = {
 	day_thread: ['skeetwolf', 'game-day-thread'],
 };
 
+/** Minimum time Night 0 runs before auto-advancing (avoids leaking action timing). */
+const NIGHT_0_MIN_DURATION_MS = 60 * 60 * 1000; // 1 hour
+
+/** Check if all valid Night 0 actions have been submitted (cop + doctor; no kill). */
+function allNight0ActionsIn(state: GameState): boolean {
+	const hasInvestigate = state.nightActions.some((a) => a.kind === 'investigate');
+	const hasProtect = state.nightActions.some((a) => a.kind === 'protect');
+	const hasCop = state.players.some((p) => p.role === 'cop' && p.alive);
+	const hasDoctor = state.players.some((p) => p.role === 'doctor' && p.alive);
+	return (!hasCop || hasInvestigate) && (!hasDoctor || hasProtect);
+}
+
 export class GameManager {
 	private games = new Map<GameId, GameState>();
 	/** Maps relay group ID → member DIDs (mirrors what DmSender tracks internally) */
@@ -257,8 +269,8 @@ export class GameManager {
 		return { error: null, majorityReached: false };
 	}
 
-	/** Process a night action */
-	nightAction(gameId: GameId, action: NightAction): string | null {
+	/** Process a night action. Returns error string or null on success. */
+	async nightAction(gameId: GameId, action: NightAction): Promise<string | null> {
 		const state = this.games.get(gameId);
 		if (!state) return 'game not found';
 
@@ -266,6 +278,9 @@ export class GameManager {
 		if (!result.ok) return result.error ?? 'action failed';
 
 		this.persist(result.state);
+
+		// Night 0: tick() handles auto-advance after minimum wait + all actions in
+
 		return null;
 	}
 
@@ -497,12 +512,12 @@ export class GameManager {
 	}
 
 	/** Submit a night action by handle (resolves handle → DID internally) */
-	nightActionByHandle(
+	async nightActionByHandle(
 		gameId: GameId,
 		actorDid: Did,
 		kind: NightActionKind,
 		targetHandle: string,
-	): string | null {
+	): Promise<string | null> {
 		const targetDid = this.resolveHandleInGame(gameId, targetHandle);
 		if (!targetDid) return `player "${targetHandle}" not found in this game`;
 		return this.nightAction(gameId, { actor: actorDid, kind, target: targetDid });
@@ -544,6 +559,20 @@ export class GameManager {
 				await this.endDay(gameId);
 			} else {
 				await this.endNight(gameId);
+			}
+		}
+
+		// Night 0 early end: once all valid actions are in and minimum wait has passed
+		for (const [id, state] of this.games) {
+			if (
+				state.status === 'active' &&
+				state.phase.kind === 'night' &&
+				state.phase.number === 0 &&
+				allNight0ActionsIn(state) &&
+				now - state.phaseStartedAt >= NIGHT_0_MIN_DURATION_MS
+			) {
+				console.log(`Night 0 auto-advancing for game ${id} (all actions in)`);
+				await this.endNight(id);
 			}
 		}
 	}

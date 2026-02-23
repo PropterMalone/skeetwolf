@@ -150,7 +150,7 @@ describe('GameManager.nightActionByHandle', () => {
 		expect(godfather).toBeDefined();
 		expect(townPlayer).toBeDefined();
 
-		const error = manager.nightActionByHandle(
+		const error = await manager.nightActionByHandle(
 			'g1',
 			godfather?.did as string,
 			'kill',
@@ -168,7 +168,7 @@ describe('GameManager.nightActionByHandle', () => {
 		}
 		await manager.startGame('g1');
 
-		const error = manager.nightActionByHandle('g1', 'did:plc:p0', 'kill', 'nobody');
+		const error = await manager.nightActionByHandle('g1', 'did:plc:p0', 'kill', 'nobody');
 		expect(error).toContain('not found');
 	});
 });
