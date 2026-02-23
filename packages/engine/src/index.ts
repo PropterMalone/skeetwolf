@@ -250,6 +250,11 @@ async function handleMention(
 			}
 			break;
 		}
+		case 'queue_status': {
+			console.log(`${authorHandle} checking queue status`);
+			await manager.queueStatus(postUri, postCid);
+			break;
+		}
 		case 'queue': {
 			console.log(`${authorHandle} joining queue`);
 			await manager.addToQueue(authorDid, authorHandle, postUri, postCid);

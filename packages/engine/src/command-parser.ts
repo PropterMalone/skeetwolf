@@ -12,6 +12,7 @@ export type MentionCommand =
 	| { kind: 'unvote'; gameId: string }
 	| { kind: 'queue' }
 	| { kind: 'unqueue' }
+	| { kind: 'queue_status' }
 	| { kind: 'confirm'; gameId: string }
 	| { kind: 'invite'; gameId: string; handle: string }
 	| { kind: 'cancel'; gameId: string }
@@ -54,7 +55,12 @@ export function parseMention(rawText: string, botHandle?: string): MentionComman
 		return { kind: 'new_game' };
 	}
 
-	// Queue commands
+	// Queue commands — status checks before join/leave
+	if (
+		/queue\s*\?|queue\s+status|who.s\s+(in\s+)?(the\s+)?queue/i.test(lower)
+	) {
+		return { kind: 'queue_status' };
+	}
 	if (lower.includes('leave queue') || lower.includes('unqueue')) {
 		return { kind: 'unqueue' };
 	}
