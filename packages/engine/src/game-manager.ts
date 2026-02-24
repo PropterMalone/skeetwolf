@@ -231,17 +231,19 @@ export class GameManager {
 		let state = this.games.get(gameId);
 		if (!state) return;
 
-		// Only process replies that actually mention the bot — casual conversation
-		// containing "vote" or "unvote" must not be treated as game commands
-		const botMentionPattern = botHandle ? `@${botHandle}` : null;
-		const commandReplies = replies.filter((r) => {
-			if (r.authorDid === botDid) return false;
-			if (!botMentionPattern) return false;
-			return r.text.includes(botMentionPattern);
-		});
-
 		let rehydrated = 0;
-		for (const reply of commandReplies) {
+		for (const reply of replies) {
+			// Skip bot's own posts
+			if (reply.authorDid === botDid) continue;
+
+			// Strip @bot mention, then require text starts with a command keyword.
+			// This prevents casual conversation like "I don't think unvote works"
+			// from being treated as game commands.
+			const stripped = botHandle
+				? reply.text.replace(new RegExp(`@${botHandle}\\s*`, 'gi'), '').trim()
+				: reply.text.trim();
+			if (!/^(vote|unvote)\b/i.test(stripped)) continue;
+
 			const cmd = parseMention(reply.text, botHandle);
 			if (cmd.kind === 'vote') {
 				const targetDid = this.resolveHandleInGame(gameId, cmd.targetHandle);
