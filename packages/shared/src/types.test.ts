@@ -12,4 +12,8 @@ describe('alignmentOf', () => {
 		expect(alignmentOf('cop')).toBe('town');
 		expect(alignmentOf('doctor')).toBe('town');
 	});
+
+	it('jester returns neutral', () => {
+		expect(alignmentOf('jester')).toBe('neutral');
+	});
 });

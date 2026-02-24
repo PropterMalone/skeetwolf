@@ -117,6 +117,8 @@ const ROLE_DESCRIPTIONS: Record<Role, string> = {
 	doctor: 'Doctor — Town protector. Chooses one player per night to protect from the mafia kill.',
 	villager:
 		'Villager — Town citizen. No special ability. Use discussion and voting to find the mafia.',
+	jester:
+		'Jester — Neutral wildcard. Win by getting yourself eliminated during the day vote. You have no night action. If you die at night, you lose.',
 };
 
 /** Describe the role setup for a game — counts + descriptions. For defined-role games
@@ -136,8 +138,9 @@ export function describeRoleSetup(playerCount: number): string {
 	return lines.join('\n');
 }
 
-/** Default role distribution: ~1/3 mafia (rounded down), 1 cop, 1 doctor, rest villagers */
-function buildRolePool(playerCount: number): Role[] {
+/** Default role distribution: ~1/3 mafia (rounded down), 1 cop, 1 doctor, rest villagers.
+ *  Neutral: 1 jester at 8+ players. */
+export function buildRolePool(playerCount: number): Role[] {
 	const mafiaCount = Math.max(1, Math.floor(playerCount / 3));
 	const roles: Role[] = [];
 
@@ -150,6 +153,9 @@ function buildRolePool(playerCount: number): Role[] {
 	// Town power roles (only if enough players)
 	if (playerCount >= 6) roles.push('cop');
 	if (playerCount >= 7) roles.push('doctor');
+
+	// Neutral roles
+	if (playerCount >= 8) roles.push('jester');
 
 	// Fill rest with villagers
 	while (roles.length < playerCount) {
@@ -309,12 +315,13 @@ export function resolveNight(state: GameState): NightResolution {
 		}
 	}
 
-	// Resolve investigation — godfather appears town
+	// Resolve investigation — godfather and jester appear town
 	let investigated: NightResolution['investigated'] = null;
 	if (investigateAction) {
 		const target = state.players.find((p) => p.did === investigateAction.target);
 		if (target) {
-			const result = target.role === 'godfather' ? 'town' : alignmentOf(target.role);
+			const result =
+				target.role === 'godfather' || target.role === 'jester' ? 'town' : alignmentOf(target.role);
 			investigated = { cop: investigateAction.actor, target: investigateAction.target, result };
 		}
 	}
@@ -336,6 +343,12 @@ export function resolveNight(state: GameState): NightResolution {
 }
 
 // -- Phase Transitions --
+
+/** Check if a day elimination killed the jester (triggers jester win). */
+export function isJesterElimination(state: GameState, eliminatedDid: Did): boolean {
+	const player = state.players.find((p) => p.did === eliminatedDid);
+	return player?.role === 'jester';
+}
 
 /** Eliminate a player by vote (day phase). Returns updated state. */
 export function eliminatePlayer(state: GameState, target: Did): GameState {

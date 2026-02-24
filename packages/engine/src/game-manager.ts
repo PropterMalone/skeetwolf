@@ -38,6 +38,7 @@ import {
 	getFlavorPack,
 	inviteGameToPlayers,
 	isInviteReady,
+	isJesterElimination,
 	isPhaseExpired,
 	popQueue,
 	randomFlavorPackName,
@@ -534,8 +535,14 @@ export class GameManager {
 
 		if (target) {
 			const eliminated = state.players.find((p) => p.did === target);
+			const jesterWin = isJesterElimination(state, target);
 			state = eliminatePlayer(state, target);
-			state = applyWinCondition(state);
+			if (jesterWin) {
+				// Jester elimination overrides normal win condition
+				state = { ...state, status: 'finished', winner: 'jester' };
+			} else {
+				state = applyWinCondition(state);
+			}
 			// Persist after game logic mutations, before any API calls
 			this.persist(state);
 
@@ -1027,13 +1034,26 @@ export class GameManager {
 	}
 
 	private async announceWinner(state: GameState): Promise<void> {
-		const winnersStr = state.players
-			.filter((p) => alignmentOf(p.role) === state.winner)
-			.map((p) => `@${p.handle}`)
-			.join(', ');
-		const rolesStr = state.players.map((p) => `@${p.handle} (${p.role})`).join(', ');
+		let winnersStr: string;
 		const f = this.flavorFor(state.id);
-		const variants = state.winner === 'town' ? f.townWins : f.mafiaWins;
+		let variants: string[];
+
+		if (state.winner === 'jester') {
+			// Jester wins alone — the eliminated jester player
+			winnersStr = state.players
+				.filter((p) => p.role === 'jester')
+				.map((p) => `@${p.handle}`)
+				.join(', ');
+			variants = f.jesterWins;
+		} else {
+			winnersStr = state.players
+				.filter((p) => alignmentOf(p.role) === state.winner)
+				.map((p) => `@${p.handle}`)
+				.join(', ');
+			variants = state.winner === 'town' ? f.townWins : f.mafiaWins;
+		}
+
+		const rolesStr = state.players.map((p) => `@${p.handle} (${p.role})`).join(', ');
 		const winText = flavor(variants, {
 			winners: `Winners: ${winnersStr}`,
 			roles: `Roles: ${rolesStr}`,

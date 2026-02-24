@@ -43,6 +43,9 @@ export interface FlavorPack {
 
 	/** Game start announcement */
 	gameStart: string[];
+
+	/** Game over — jester wins (eliminated by day vote). {winners}, {roles} */
+	jesterWins: string[];
 }
 
 export const DEFAULT_FLAVOR: FlavorPack = {
@@ -78,6 +81,11 @@ export const DEFAULT_FLAVOR: FlavorPack = {
 			'The wolves are one fewer. @{victim} the mafioso has been silenced.',
 			"@{victim}'s cover is blown permanently. One less wolf on the timeline.",
 			"A wolf falls in the night. @{victim} the mafioso won't be scheming anymore.",
+		],
+		jester: [
+			"@{victim} is gone — but they're grinning from beyond the timeline. The jester never cared about sides.",
+			'@{victim} the jester was taken out in the night. No win for the clown this time.',
+			"The wolves got @{victim}. Little did they know, the jester's chaos was the only thing making this interesting.",
 		],
 	},
 
@@ -119,6 +127,11 @@ export const DEFAULT_FLAVOR: FlavorPack = {
 			'The votes stack up against @{victim}. A mafioso is exposed and eliminated.',
 			'@{victim} is voted off the timeline. They were a mafioso. One wolf down.',
 			"The town gets it right. @{victim} was a mafioso, and they're out.",
+		],
+		jester: [
+			"@{victim} is voted out — and they're laughing. The jester WANTED this. You just played yourself.",
+			'The town eliminates @{victim}. A slow, horrible realization dawns: they were the jester. You gave them exactly what they wanted.',
+			"@{victim} takes a bow as they're voted off. The jester wins. The town played right into their hands.",
 		],
 	},
 
@@ -170,6 +183,11 @@ export const DEFAULT_FLAVOR: FlavorPack = {
 			"You're a MAFIOSO. A wolf in poster's clothing. Work with your pack through the bot relay. Stay hidden, vote strategically.",
 			"You're a MAFIOSO. Part of the wolf pack. Keep your cover, coordinate through DMs, and help your team dominate the timeline.",
 		],
+		jester: [
+			"You're the JESTER. Neutral agent of chaos. Your only goal: get yourself eliminated by the day vote. Die at night and you lose. Play both sides, be suspicious, get voted out.",
+			"You're the JESTER. You win if the town votes you out. Night kills don't count. Be annoying, be sus, get eliminated.",
+			"You're the JESTER. Neither town nor mafia — you're here to troll. Get voted out during the day and you win. That's it. That's the whole plan.",
+		],
 	},
 
 	copResult: [
@@ -210,12 +228,23 @@ export const DEFAULT_FLAVOR: FlavorPack = {
 			'Night 0: no hunting yet. Chat with your teammates through the bot relay. Day 1 is on the way.',
 			"Can't make a move tonight — Night 0 is just for setup. Use the relay to plan with your pack.",
 		],
+		jester: [
+			"It's Night 0 — nothing for you to do yet. Plan your strategy for Day 1. Remember: you win by getting voted out.",
+			'Night 0. No action needed. Start thinking about how to make yourself look suspicious when day breaks.',
+			'Night 0 — sit tight, jester. Your time to shine is during the day. Figure out how to get yourself eliminated.',
+		],
 	},
 
 	gameStart: [
 		'The game is afoot. Check your DMs for your role.',
 		'Roles have been dealt. Check your DMs — and trust no one.',
 		'The wolves walk among you. Check your DMs to learn who you are.',
+	],
+
+	jesterWins: [
+		'The jester got exactly what they wanted. Voted out and victorious. The town and the wolves both got played.\n\n{winners}\n\n{roles}',
+		'Congratulations — you all just handed the jester a win. They WANTED to be eliminated. Well played, clown.\n\n{winners}\n\n{roles}',
+		'The jester takes their final bow. Eliminated by vote, victorious by design. Everyone else? Outplayed.\n\n{winners}\n\n{roles}',
 	],
 };
 
@@ -252,6 +281,11 @@ export const NOIR_FLAVOR: FlavorPack = {
 			'A two-bit hood goes down. @{victim} the enforcer has been silenced — permanently.',
 			"@{victim} won't be shaking anyone down anymore. Another syndicate rat flushed out.",
 			'The syndicate is one soldier lighter. @{victim} the mafioso has been dealt with.',
+		],
+		jester: [
+			'@{victim} was found face-down in a puddle of cheap gin, grinning. The fool never picked a side — and now they never will.',
+			"They got @{victim} in the night. The jester's last joke? Nobody laughed.",
+			'@{victim} the jester is gone — rubbed out before they could pull off their grift. No punchline tonight.',
 		],
 	},
 
@@ -293,6 +327,11 @@ export const NOIR_FLAVOR: FlavorPack = {
 			"The borough catches a break. @{victim} was muscle for the syndicate — and now they're on the curb.",
 			'@{victim} the mafioso goes down. One less goon. The city breathes a little easier.',
 			'The mob finds a real crook for once. @{victim} the mafioso is out.',
+		],
+		jester: [
+			"@{victim} takes a bow as the borough votes them out. The jester played everyone — syndicate and citizens alike. You've been had.",
+			'The borough eliminates @{victim}. Slow realization hits like a slug from a .38: that was the jester. They wanted this.',
+			'@{victim} tips their hat on the way out. The jester wins. The whole borough just got conned.',
 		],
 	},
 
@@ -344,6 +383,11 @@ export const NOIR_FLAVOR: FlavorPack = {
 			"You're an ENFORCER. Part of the syndicate. Work through the relay, keep your cover, and follow the boss's lead.",
 			"You're an ENFORCER. A soldier in the syndicate. Use the relay to plan with your crew. Stay in the shadows.",
 		],
+		jester: [
+			"You're the JESTER. A wildcard in a city of crooks and gumshoes. Your only angle: get the borough to vote you out. Night kills don't count. Play both sides, act suspicious, get eliminated.",
+			"You're the JESTER. Neither syndicate nor citizen — you're running your own con. Get yourself voted out during the day and you win. The PI sees you as clean.",
+			"You're the JESTER. Neutral party in a dirty city. Get the borough to finger you for elimination and you walk away the winner. Night hits don't count.",
+		],
 	},
 
 	copResult: [
@@ -384,12 +428,23 @@ export const NOIR_FLAVOR: FlavorPack = {
 			"Night 0. The boss calls the shots, but the relay's open for planning. Sit tight.",
 			"Can't do anything tonight — Night 0 is just setup. Use the relay to coordinate with the syndicate.",
 		],
+		jester: [
+			'Night 0 — nothing for you to do, jester. Plan your con for Day 1. Remember: get voted out and you win.',
+			'Night 0. No moves yet. Start figuring out how to make yourself look guilty when the sun comes up.',
+			'Night 0 — sit tight, wildcard. Your act starts at dawn. Figure out how to get the borough to point the finger at you.',
+		],
 	},
 
 	gameStart: [
 		'The case begins. Check your DMs — and trust nobody in this city.',
 		'The game is on, and the streets are watching. Check your DMs for your assignment.',
 		'Someone in this borough has blood on their hands. Check your DMs to find out who you are.',
+	],
+
+	jesterWins: [
+		'The jester played this city like a cheap fiddle. Voted out and victorious — the syndicate and the citizens both got hustled.\n\n{winners}\n\n{roles}',
+		'Case closed — but not the way anyone expected. The jester got themselves pinched on purpose. Whole borough got conned.\n\n{winners}\n\n{roles}',
+		'The jester tips their hat from the curb. Eliminated by vote, winner by design. This rotten city just got out-rotted.\n\n{winners}\n\n{roles}',
 	],
 };
 
@@ -426,6 +481,11 @@ export const CORPORATE_FLAVOR: FlavorPack = {
 			"@{victim} won't be filing any more false expense reports. A saboteur exposed and eliminated.",
 			'Another saboteur bites the dust. @{victim} has been terminated — for real this time.',
 			"@{victim}'s access badge is shredded. A corporate saboteur, gone before the morning standup.",
+		],
+		jester: [
+			"@{victim} was terminated overnight. The office contrarian won't be derailing any more meetings — and they never got their severance package.",
+			"@{victim}'s badge was deactivated at 3 AM. The company jester is out, and they never got to execute their real exit strategy.",
+			'@{victim} the office provocateur got laid off before they could get themselves fired on purpose. No golden parachute for the jester.',
 		],
 	},
 
@@ -467,6 +527,11 @@ export const CORPORATE_FLAVOR: FlavorPack = {
 			"The team catches a break. @{victim} was a saboteur all along — and now they're cleaning out their desk.",
 			'@{victim} the saboteur is out. One less mole in the company. Time to update the org chart.',
 			"HR finally got one right. @{victim} was a corporate saboteur, and they're out.",
+		],
+		jester: [
+			"@{victim} is voted out — and they're grinning through the exit interview. The office jester WANTED to be fired. You just gave them the severance package of a lifetime.",
+			"The team terminates @{victim}. Then it dawns on everyone: they were the jester. They've been angling for this PIP since day one.",
+			'@{victim} cleans out their desk with a smile. The jester wins. The whole company just got played by someone who wanted to be fired.',
 		],
 	},
 
@@ -518,6 +583,11 @@ export const CORPORATE_FLAVOR: FlavorPack = {
 			"You're a SABOTEUR. Working from the inside. Use the relay to plan with your crew. Stay under the radar.",
 			"You're a SABOTEUR. Part of the operation. Keep your cover, coordinate through the relay, and undermine the company from within.",
 		],
+		jester: [
+			"You're the OFFICE JESTER. Neither employee nor saboteur — you're here to get yourself fired. Get voted out by the team and you win. Night layoffs don't count. The auditor sees you as clean.",
+			"You're the OFFICE JESTER. Your only KPI: get terminated by popular vote. Derail meetings, act suspicious, get yourself on a PIP. Night eliminations don't trigger your win.",
+			"You're the OFFICE JESTER. Neutral agent of chaos in the org chart. Get the team to vote you out and you walk away victorious. Audits show you as a regular employee.",
+		],
 	},
 
 	copResult: [
@@ -558,12 +628,23 @@ export const CORPORATE_FLAVOR: FlavorPack = {
 			"Night 0. The ringleader calls the shots, but the relay's open for planning. Sit tight.",
 			"Can't do anything tonight — Night 0 is just onboarding. Use the relay to coordinate with the team.",
 		],
+		jester: [
+			'Night 0 — nothing for you to do, jester. Plan your strategy for the morning standup. Remember: get voted out and you win.',
+			'Night 0. No action needed. Start drafting your plan to look as suspicious as possible when the workday starts.',
+			'Night 0 — sit tight, office jester. Your performance review starts at dawn. Figure out how to get yourself on the chopping block.',
+		],
 	},
 
 	gameStart: [
 		'The all-hands is called. Check your DMs for your role — and watch your back in the break room.',
 		'New reorg just dropped. Check your DMs to find out where you landed.',
 		'Something is rotten in this company. Check your DMs to learn your role.',
+	],
+
+	jesterWins: [
+		'The office jester got exactly what they wanted: fired by committee. The saboteurs and the employees both got outplayed.\n\n{winners}\n\n{roles}',
+		'Congratulations — the whole company just handed the jester a golden parachute. They WANTED to be terminated. HR is speechless.\n\n{winners}\n\n{roles}',
+		'The jester walks out with a box of personal items and a victory lap. Voted off the org chart by design. Everyone else? Played.\n\n{winners}\n\n{roles}',
 	],
 };
 
@@ -600,6 +681,11 @@ export const VICTORIAN_FLAVOR: FlavorPack = {
 			'One less shadow in the gaslight. @{victim} the cultist shall conspire no more.',
 			'@{victim}, once hidden behind a respectable facade, is revealed as a member of the murderous society.',
 			'The society loses a foot soldier. @{victim} the cultist has been dealt with.',
+		],
+		jester: [
+			'@{victim} was found at dawn with a peculiar smile upon their face. The fool belonged to no faction — and now belongs to no one at all.',
+			"The society struck down @{victim} in the night. The jester's grand performance ends before the final act.",
+			'@{victim} the court jester perished in the fog. No victory for the fool — their scheme dies with them.',
 		],
 	},
 
@@ -641,6 +727,11 @@ export const VICTORIAN_FLAVOR: FlavorPack = {
 			'The evidence mounts against @{victim}. A member of the society, exposed and expelled.',
 			'@{victim} the cultist is driven from the borough. One less conspirator in the shadows.',
 			'The borough roots out @{victim} — a soldier of the secret society. Well done, citizens.',
+		],
+		jester: [
+			"@{victim} curtsies as the borough casts them out. The fool WISHED for this condemnation. You've all been played most thoroughly.",
+			'The borough condemns @{victim}. A dreadful realization follows: the jester desired nothing more than expulsion. They have won.',
+			'@{victim} takes their leave with a mocking bow. The court jester is victorious — the borough handed them exactly what they sought.',
 		],
 	},
 
@@ -692,6 +783,11 @@ export const VICTORIAN_FLAVOR: FlavorPack = {
 			"You are a CULTIST. Sworn to the society. Work through the relay, maintain your cover, and serve the grandmaster's designs.",
 			'You are a CULTIST. Part of the secret order. Keep your facade, coordinate through the relay, and help the society conquer the borough.',
 		],
+		jester: [
+			'You are the COURT JESTER. A fool beholden to neither citizens nor society. Your sole ambition: be condemned by the borough vote. Perishing at night gains you nothing. The inspector sees you as a citizen.',
+			'You are the COURT JESTER. Neither loyal subject nor conspirator — merely a fool with a scheme. Get yourself voted out and you are victorious. Night murders do not count.',
+			"You are the COURT JESTER. Neutral agent of mischief in the borough. Arrange your own condemnation by the people's vote and you win. The inspector's inquiries reveal nothing suspicious.",
+		],
 	},
 
 	copResult: [
@@ -732,12 +828,23 @@ export const VICTORIAN_FLAVOR: FlavorPack = {
 			'Night 0. The grandmaster leads, but the relay is open for discussion. Await the dawn.',
 			'Nothing to do tonight — Night 0 is merely preparation. Use the relay to confer with the society.',
 		],
+		jester: [
+			'Night 0 — nothing for you to do, fool. Devise your stratagem for Day 1. Remember: condemnation by vote is your victory.',
+			'Night 0. No action required. Consider how best to arouse suspicion when the borough convenes at dawn.',
+			'Night 0 — rest now, court jester. Your performance begins with the morning light. Plan how to secure your own condemnation.',
+		],
 	},
 
 	gameStart: [
 		'The game is afoot. Check your DMs — and trust no one in these foggy streets.',
 		'Roles have been assigned by lamplight. Check your DMs to learn your place in this affair.',
 		'A darkness stirs in the borough. Check your DMs to discover who you truly are.',
+	],
+
+	jesterWins: [
+		'The court jester has achieved their wretched ambition. Condemned by the borough, victorious by design. Citizens and society alike — outmanoeuvred by a fool.\n\n{winners}\n\n{roles}',
+		'The fool takes their final bow. Expelled by vote, triumphant by cunning. The borough has been made to look quite ridiculous.\n\n{winners}\n\n{roles}',
+		"The jester's laughter echoes through the gaslit streets. They sought condemnation and received it. Everyone else? Merely players in the fool's grand theatre.\n\n{winners}\n\n{roles}",
 	],
 };
 
@@ -774,6 +881,11 @@ export const MONSTER_MASH_FLAVOR: FlavorPack = {
 			'The villagers unmask @{victim}. Literally — underneath was something with far too many teeth.',
 			'@{victim} the creature is destroyed. One less monster hiding behind a human face.',
 			'Another monster down. @{victim} reverts to their true hideous form as the sun rises.',
+		],
+		jester: [
+			"@{victim} was found at dawn wearing a grin and a jester's cap. The village trickster got eaten before they could pull off their grand prank.",
+			'The monsters devoured @{victim} the jester in the night. No glorious village exile for the fool — just a midnight snack.',
+			"@{victim} the jester is gone. The creatures didn't know they were supposed to let the clown get voted out first.",
 		],
 	},
 
@@ -815,6 +927,11 @@ export const MONSTER_MASH_FLAVOR: FlavorPack = {
 			'Pitchforks find their mark. @{victim} was a monster all along — exposed and expelled from the village.',
 			'@{victim} the creature is caught. One less monster hiding among the villagers.',
 			"The torches and pitchforks work! @{victim} was a monster, and they're out of the village.",
+		],
+		jester: [
+			"@{victim} does a little dance as the mob chases them out. The jester WANTED the pitchforks! You've all been pranked!",
+			'The village drives out @{victim}. Then the terrible truth sinks in: the jester wanted to be banished. It was all part of the act.',
+			"@{victim} cartwheels past the angry mob. The village jester wins — they've been trying to get exiled this whole time!",
 		],
 	},
 
@@ -866,6 +983,11 @@ export const MONSTER_MASH_FLAVOR: FlavorPack = {
 			"You're a CREATURE. Monster in human skin. Work through the relay, keep your disguise, and follow the alpha's lead.",
 			"You're a CREATURE. Part of the monster pack. Stay hidden among the villagers, coordinate through the relay.",
 		],
+		jester: [
+			"You're the VILLAGE JESTER. Neither human nor monster — just a fool with a death wish. Get the mob to chase you out with pitchforks and you win. Getting eaten at night doesn't count. The hunter sees you as human.",
+			"You're the VILLAGE JESTER. Neutral trickster in a village full of monsters. Your goal: get voted out by the angry mob. Night kills don't trigger your win.",
+			"You're the VILLAGE JESTER. Not a monster, not a villager — just chaotic. Get yourself banished by the village vote and you're victorious. The hunter's traps read you as human.",
+		],
 	},
 
 	copResult: [
@@ -906,12 +1028,23 @@ export const MONSTER_MASH_FLAVOR: FlavorPack = {
 			"Night 0. The alpha leads, but the relay's open for pack coordination. Wait for dawn.",
 			"Can't hunt tonight — Night 0 is just for gathering the pack. Use the relay to plan.",
 		],
+		jester: [
+			'Night 0 — nothing for you to do, fool. Plot your act for Day 1. Remember: get the mob to drive you out and you win.',
+			'Night 0. No action needed. Start planning how to look as suspicious as possible when the villagers gather at dawn.',
+			'Night 0 — sit tight, jester. Your performance starts when the sun rises. Figure out how to get the pitchforks pointed at you.',
+		],
 	},
 
 	gameStart: [
 		'The monsters are among you. Check your DMs to find out what you are — human or otherwise.',
 		'Something wicked this way comes. Check your DMs for your role in this creature feature.',
 		'The village trembles. Check your DMs — are you hunter, healer, or something with fangs?',
+	],
+
+	jesterWins: [
+		'The jester dances through the village gates, banished and victorious. The monsters and the villagers both got played by a fool in a funny hat.\n\n{winners}\n\n{roles}',
+		'The mob chased the jester out — exactly as planned. Pitchforks, torches, the whole show. And the jester? Taking a bow on the other side of the village wall.\n\n{winners}\n\n{roles}',
+		'The village jester wins! Driven out by angry mob, victorious by design. The monsters are confused. The villagers are furious. The jester is laughing.\n\n{winners}\n\n{roles}',
 	],
 };
 

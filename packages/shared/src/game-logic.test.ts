@@ -3,11 +3,13 @@ import {
 	addPlayer,
 	advancePhase,
 	assignRoles,
+	buildRolePool,
 	castVote,
 	checkWinCondition,
 	createGame,
 	eliminatePlayer,
 	getPhaseDeadline,
+	isJesterElimination,
 	isPhaseExpired,
 	replacePlayer,
 	resolveNight,
@@ -17,7 +19,7 @@ import {
 import { type GameState, alignmentOf } from './types.js';
 
 function gameWithPlayers(count: number): GameState {
-	let state = createGame('test-1');
+	let state = createGame('test-1', { minPlayers: count, maxPlayers: count });
 	for (let i = 0; i < count; i++) {
 		const result = addPlayer(state, `did:plc:player${i}`, `player${i}.bsky.social`);
 		state = result.state;
@@ -88,7 +90,12 @@ describe('assignRoles', () => {
 	});
 
 	it('rejects with too few players', () => {
-		const state = gameWithPlayers(3);
+		// Use default config (minPlayers=7) with only 3 players
+		let state = createGame('test-1');
+		for (let i = 0; i < 3; i++) {
+			const r = addPlayer(state, `did:plc:player${i}`, `player${i}.bsky.social`);
+			state = r.state;
+		}
 		const result = assignRoles(state);
 		expect(result.ok).toBe(false);
 		expect(result.error).toContain('at least');
@@ -425,5 +432,61 @@ describe('replacePlayer', () => {
 		const result = replacePlayer(state, 'did:plc:player0', 'did:plc:player1', 'player1');
 		expect(result.ok).toBe(false);
 		expect(result.error).toContain('already in game');
+	});
+});
+
+describe('jester role', () => {
+	it('buildRolePool includes jester at 8+ players', () => {
+		const roles8 = buildRolePool(8);
+		expect(roles8).toContain('jester');
+	});
+
+	it('buildRolePool does not include jester at 7 players', () => {
+		const roles7 = buildRolePool(7);
+		expect(roles7).not.toContain('jester');
+	});
+
+	it('jester is excluded from win condition math', () => {
+		// 8 players with noShuffle: godfather, mafioso, cop, doctor, jester, villager, villager, villager
+		const state = gameWithPlayers(8);
+		const game = assignRoles(state, noShuffle).state;
+
+		// Kill all town: cop(2), doctor(3), villager(5,6,7) → 2 mafia + 1 jester alive → mafia wins
+		let g = eliminatePlayer(game, 'did:plc:player2');
+		g = eliminatePlayer(g, 'did:plc:player3');
+		g = eliminatePlayer(g, 'did:plc:player5');
+		g = eliminatePlayer(g, 'did:plc:player6');
+		g = eliminatePlayer(g, 'did:plc:player7');
+		expect(checkWinCondition(g)).toBe('mafia');
+	});
+
+	it('cop investigating jester reads as town', () => {
+		const state = gameWithPlayers(8);
+		let game = assignRoles(state, noShuffle).state;
+		// noShuffle 8p: godfather(0), mafioso(1), cop(2), doctor(3), jester(4), villager(5,6,7)
+		game = advancePhase(game); // Night 0 → Day 1
+		game = advancePhase(game); // Day 1 → Night 1
+
+		game = submitNightAction(game, {
+			actor: 'did:plc:player2', // cop
+			kind: 'investigate',
+			target: 'did:plc:player4', // jester
+		}).state;
+
+		const resolution = resolveNight(game);
+		expect(resolution.investigated?.result).toBe('town');
+	});
+
+	it('isJesterElimination returns true for jester', () => {
+		const state = gameWithPlayers(8);
+		const game = assignRoles(state, noShuffle).state;
+		// player4 is jester with noShuffle at 8 players
+		expect(isJesterElimination(game, 'did:plc:player4')).toBe(true);
+	});
+
+	it('isJesterElimination returns false for non-jester', () => {
+		const state = gameWithPlayers(8);
+		const game = assignRoles(state, noShuffle).state;
+		expect(isJesterElimination(game, 'did:plc:player0')).toBe(false);
 	});
 });
