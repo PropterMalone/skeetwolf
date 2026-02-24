@@ -109,6 +109,33 @@ export function assignRoles(
 	};
 }
 
+const ROLE_DESCRIPTIONS: Record<Role, string> = {
+	godfather:
+		'Godfather — Mafia leader. Appears TOWN to cop investigations. Votes on the mafia kill target.',
+	mafioso: 'Mafioso — Mafia member. Votes on the mafia kill target.',
+	cop: 'Cop — Town investigator. Investigates one player per night to learn their alignment (town/mafia). Note: the Godfather reads as TOWN.',
+	doctor: 'Doctor — Town protector. Chooses one player per night to protect from the mafia kill.',
+	villager:
+		'Villager — Town citizen. No special ability. Use discussion and voting to find the mafia.',
+};
+
+/** Describe the role setup for a game — counts + descriptions. For defined-role games
+ *  where players know what roles are in the game but not who has them. */
+export function describeRoleSetup(playerCount: number): string {
+	const roles = buildRolePool(playerCount);
+	const counts = new Map<Role, number>();
+	for (const role of roles) {
+		counts.set(role, (counts.get(role) ?? 0) + 1);
+	}
+
+	const lines: string[] = [];
+	for (const [role, count] of counts) {
+		const prefix = count > 1 ? `${count}x ` : '';
+		lines.push(`${prefix}${ROLE_DESCRIPTIONS[role]}`);
+	}
+	return lines.join('\n');
+}
+
 /** Default role distribution: ~1/3 mafia (rounded down), 1 cop, 1 doctor, rest villagers */
 function buildRolePool(playerCount: number): Role[] {
 	const mafiaCount = Math.max(1, Math.floor(playerCount / 3));

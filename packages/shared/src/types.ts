@@ -82,6 +82,31 @@ export const DEFAULT_CONFIG: GameConfig = {
 	signupDurationMs: 24 * 60 * 60 * 1000, // 24 hours
 };
 
+// -- Game Presets --
+
+export type PresetName = 'turbo' | 'standard' | 'marathon';
+
+export const GAME_PRESETS: Record<PresetName, { label: string; config: Partial<GameConfig> }> = {
+	turbo: {
+		label: 'turbo — 6h days, 3h nights',
+		config: {
+			dayDurationMs: 6 * 60 * 60 * 1000,
+			nightDurationMs: 3 * 60 * 60 * 1000,
+		},
+	},
+	standard: {
+		label: 'standard — 24h days, 12h nights',
+		config: {},
+	},
+	marathon: {
+		label: 'marathon — 48h days, 24h nights',
+		config: {
+			dayDurationMs: 48 * 60 * 60 * 1000,
+			nightDurationMs: 24 * 60 * 60 * 1000,
+		},
+	},
+};
+
 /** Format milliseconds as a human-readable duration (e.g., "24 hours", "30 minutes") */
 export function formatDuration(ms: number): string {
 	const minutes = Math.round(ms / 60_000);

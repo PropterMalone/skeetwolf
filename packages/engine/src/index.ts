@@ -373,8 +373,17 @@ async function handleMention(
 			break;
 		}
 		case 'new_invite_game': {
-			console.log(`${authorHandle} creating invite game for ${cmd.handles.join(', ')}`);
-			await manager.createInviteGame(authorDid, authorHandle, cmd.handles, postUri, postCid);
+			console.log(
+				`${authorHandle} creating invite game for ${cmd.handles.join(', ')}${cmd.preset ? ` (${cmd.preset})` : ''}`,
+			);
+			await manager.createInviteGame(
+				authorDid,
+				authorHandle,
+				cmd.handles,
+				postUri,
+				postCid,
+				cmd.preset,
+			);
 			break;
 		}
 		case 'confirm': {

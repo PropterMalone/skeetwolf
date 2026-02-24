@@ -63,6 +63,40 @@ describe('parseMention', () => {
 		});
 	});
 
+	it('parses "new game @a @b turbo" with preset', () => {
+		const result = parseMention('new game @alice @bob turbo', bot);
+		expect(result).toEqual({
+			kind: 'new_invite_game',
+			handles: ['alice', 'bob'],
+			preset: 'turbo',
+		});
+	});
+
+	it('parses "new game @a @b" without preset', () => {
+		const result = parseMention('new game @alice @bob', bot);
+		expect(result).toEqual({
+			kind: 'new_invite_game',
+			handles: ['alice', 'bob'],
+		});
+	});
+
+	it('does not treat @turbo.bsky.social as a preset', () => {
+		const result = parseMention('new game @turbo.bsky.social @bob', bot);
+		expect(result).toEqual({
+			kind: 'new_invite_game',
+			handles: ['turbo.bsky.social', 'bob'],
+		});
+	});
+
+	it('parses preset case-insensitively', () => {
+		const result = parseMention('new game @alice @bob MARATHON', bot);
+		expect(result).toEqual({
+			kind: 'new_invite_game',
+			handles: ['alice', 'bob'],
+			preset: 'marathon',
+		});
+	});
+
 	it('parses "queue"', () => {
 		expect(parseMention('@skeetwolf.bsky.social queue', bot)).toEqual({ kind: 'queue' });
 	});
