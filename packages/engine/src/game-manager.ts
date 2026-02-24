@@ -7,12 +7,14 @@ import {
 	DEFAULT_CONFIG,
 	type Did,
 	type FlavorPack,
+	GAME_PRESETS,
 	type GameId,
 	type GameState,
 	type Handle,
 	type InviteGame,
 	type NightAction,
 	type NightActionKind,
+	type PresetName,
 	type PublicQueue,
 	type Role,
 	addInviteSlot,
@@ -29,6 +31,7 @@ import {
 	createGame,
 	createInviteGame,
 	createQueue,
+	describeRoleSetup,
 	eliminatePlayer,
 	flavor,
 	formatDuration,
@@ -50,6 +53,7 @@ import {
 	type DmSender,
 	type PostRef,
 	type ThreadReply,
+	createDayThreadgate,
 	createPostgate,
 	createThreadgate,
 	deletePostgate,
@@ -677,10 +681,14 @@ export class GameManager {
 				.map((p) => `@${p.handle}`)
 				.join(' ');
 
-			let text = `🐺 Skeetwolf Game #${gameId} — Day ${dayNumber}!\n\nPlayers alive: ${playerList}\n\nDawn breaks. ${dawnResults}\n\nDiscuss and vote! Day ends in ${formatDuration(state.config.dayDurationMs)}.`;
+			const operatorHandle = process.env['OPERATOR_HANDLE'];
+			const operatorMention = operatorHandle ? ` @${operatorHandle}` : '';
+			let text = `🐺 Skeetwolf Game #${gameId} — Day ${dayNumber}!\n\nPlayers alive: ${playerList}${operatorMention}\n\nDawn breaks. ${dawnResults}\n\nDiscuss and vote! Day ends in ${formatDuration(state.config.dayDurationMs)}.`;
 
-			// Day 1: include feed URL so players can follow the game
+			// Day 1: include role setup + feed URL so players/spectators know the game
 			if (dayNumber === 1) {
+				const roleSetup = describeRoleSetup(state.players.length);
+				text += `\n\n🎭 Roles in this game:\n${roleSetup}`;
 				text += `\n\n📡 Follow this game: ${this.feedUrl(gameId)}`;
 			}
 
@@ -1094,6 +1102,14 @@ export class GameManager {
 		}
 
 		const [first] = refs;
+
+		// Apply mentionRule threadgate on the first post — restricts replies to @mentioned users
+		try {
+			await createDayThreadgate(this.agent, first.uri);
+		} catch (err) {
+			console.error(`Failed to create day threadgate for ${first.uri}:`, err);
+		}
+
 		return first;
 	}
 
@@ -1331,6 +1347,7 @@ export class GameManager {
 		handles: string[],
 		replyUri: string,
 		replyCid: string,
+		preset?: PresetName,
 	): Promise<void> {
 		// Filter out the bot handle
 		const botHandle = this.agent.session?.handle;
@@ -1363,7 +1380,8 @@ export class GameManager {
 		}
 
 		const id = Date.now().toString(36);
-		const result = createInviteGame(id, initiatorDid, initiatorHandle, resolved);
+		const presetConfig = preset ? GAME_PRESETS[preset].config : {};
+		const result = createInviteGame(id, initiatorDid, initiatorHandle, resolved, presetConfig);
 		if (!result.ok) {
 			await this.replyNoGame(result.error ?? 'invite error', replyUri, replyCid);
 			return;
@@ -1375,8 +1393,9 @@ export class GameManager {
 
 		const minPlayers = invite.config.minPlayers;
 		const invitedMentions = resolved.map((r) => `@${r.handle}`).join(' ');
+		const presetLabel = preset ? ` (${GAME_PRESETS[preset].label})` : '';
 		await this.replyNoGame(
-			`Invite game #${id} created! ${invitedMentions} — reply "confirm #${id}" to join. Need ${minPlayers} total players.`,
+			`Invite game #${id} created${presetLabel}! ${invitedMentions} — reply "confirm #${id}" to join. Need ${minPlayers} total players.`,
 			replyUri,
 			replyCid,
 		);
@@ -1499,7 +1518,7 @@ export class GameManager {
 		const players = inviteGameToPlayers(invite);
 		const id = inviteId; // Use the same ID for continuity
 
-		let state = createGame(id, {}, randomFlavorPackName());
+		let state = createGame(id, invite.config, randomFlavorPackName());
 		this.persist(state);
 
 		for (const p of players) {

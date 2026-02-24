@@ -3,9 +3,11 @@
  * All parsing is pure — no I/O.
  */
 
+import type { PresetName } from '@skeetwolf/shared';
+
 export type MentionCommand =
 	| { kind: 'new_game' }
-	| { kind: 'new_invite_game'; handles: string[] }
+	| { kind: 'new_invite_game'; handles: string[]; preset?: PresetName }
 	| { kind: 'join'; gameId: string }
 	| { kind: 'start'; gameId: string }
 	| { kind: 'vote'; gameId: string; targetHandle: string }
@@ -52,7 +54,8 @@ export function parseMention(rawText: string, botHandle?: string): MentionComman
 	if (lower.includes('new game')) {
 		const handles = extractHandles(text);
 		if (handles.length > 0) {
-			return { kind: 'new_invite_game', handles };
+			const preset = extractPreset(text);
+			return { kind: 'new_invite_game', handles, ...(preset ? { preset } : {}) };
 		}
 		return { kind: 'new_game' };
 	}
@@ -159,6 +162,20 @@ function extractGameId(lower: string): string | undefined {
 function extractHandles(text: string): string[] {
 	const matches = text.matchAll(/@([\w.:-]+)/g);
 	return [...matches].map((m) => m[1]).filter((h): h is string => h !== undefined);
+}
+
+const PRESET_NAMES = new Set<PresetName>(['turbo', 'standard', 'marathon']);
+
+/** Extract a preset name from non-@mention words in the text */
+function extractPreset(text: string): PresetName | undefined {
+	// Split into words and check non-handle words for preset names
+	const words = text.split(/\s+/);
+	for (const word of words) {
+		if (word.startsWith('@')) continue;
+		const lower = word.toLowerCase();
+		if (PRESET_NAMES.has(lower as PresetName)) return lower as PresetName;
+	}
+	return undefined;
 }
 
 function escapeRegex(s: string): string {
