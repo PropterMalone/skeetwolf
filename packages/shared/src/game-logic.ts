@@ -7,6 +7,7 @@ import type {
 	GameConfig,
 	GameId,
 	GameState,
+	Handle,
 	NightAction,
 	Phase,
 	Player,
@@ -35,6 +36,7 @@ export function createGame(id: GameId, config: Partial<GameConfig> = {}): GameSt
 		dayThreadCid: null,
 		phaseStartedAt: now,
 		createdAt: now,
+		pendingDmDids: [],
 	};
 }
 
@@ -362,4 +364,36 @@ export function applyWinCondition(state: GameState): GameState {
 		return { ...state, status: 'finished', winner };
 	}
 	return state;
+}
+
+// -- Player Replacement --
+
+export interface ReplaceResult {
+	ok: boolean;
+	error?: string;
+	state: GameState;
+}
+
+/** Swap a player's identity while preserving their role. Only allowed during Night 0. */
+export function replacePlayer(
+	state: GameState,
+	oldDid: Did,
+	newDid: Did,
+	newHandle: Handle,
+): ReplaceResult {
+	if (state.phase.kind !== 'night' || state.phase.number !== 0) {
+		return { ok: false, error: 'replacement only allowed during Night 0', state };
+	}
+	const idx = state.players.findIndex((p) => p.did === oldDid);
+	if (idx === -1) {
+		return { ok: false, error: 'player not found', state };
+	}
+	if (state.players.some((p) => p.did === newDid)) {
+		return { ok: false, error: 'replacement player already in game', state };
+	}
+	const old = state.players[idx] as Player;
+	const updated = { ...old, did: newDid, handle: newHandle };
+	const players = [...state.players];
+	players[idx] = updated;
+	return { ok: true, state: { ...state, players } };
 }

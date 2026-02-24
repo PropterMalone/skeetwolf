@@ -37,6 +37,7 @@ import {
 	isPhaseExpired,
 	popQueue,
 	removeFromQueue,
+	replacePlayer,
 	resolveNight,
 	submitNightAction,
 	tallyVotes,
@@ -85,6 +86,24 @@ const POST_KIND_LABELS: Record<PostKind, string[]> = {
 /** Night 0 check interval — only evaluate early end on hourly boundaries to avoid leaking action timing. */
 const NIGHT_0_CHECK_INTERVAL_MS = 60 * 60 * 1000; // 1 hour
 
+/** How long to wait before replacing unreachable players with queue substitutes */
+const DM_RETRY_TIMEOUT_MS = 6 * 60 * 60 * 1000; // 6 hours
+
+interface PendingDmFailure {
+	did: Did;
+	handle: Handle;
+	role: Role;
+	addedAt: number; // when this failure was first detected (per-player timer)
+}
+
+interface PendingDmGame {
+	gameId: GameId;
+	failures: PendingDmFailure[];
+	triggerUri?: string;
+	triggerCid?: string;
+	warnedHandles: Set<string>;
+}
+
 /** Check if all meaningful Night 0 actions are in. Only cop matters — doctor protect is
  *  a no-op (no kill to block) and we don't want to force a pointless action. */
 function allNight0ActionsIn(state: GameState): boolean {
@@ -104,6 +123,8 @@ export class GameManager {
 	private night0LastCheckedHour = new Map<GameId, number>();
 	/** Tracks which hourly boundary we last posted vote counts for day phases */
 	private voteCountLastPostedHour = new Map<GameId, number>();
+	/** Games blocked on DM delivery — retried each tick until resolved or timed out */
+	private pendingDmRetries = new Map<GameId, PendingDmGame>();
 	private publicQueue: PublicQueue = createQueue();
 	private inviteGames = new Map<GameId, InviteGame>();
 
@@ -152,6 +173,26 @@ export class GameManager {
 		const invites = loadActiveInviteGames(this.db);
 		for (const invite of invites) {
 			this.inviteGames.set(invite.id, invite);
+		}
+
+		// Rebuild DM retry state for games with undelivered role DMs
+		for (const game of active) {
+			if (game.pendingDmDids.length > 0 && game.phase.kind === 'night' && game.phase.number === 0) {
+				const failures: PendingDmFailure[] = game.pendingDmDids
+					.map((did) => {
+						const player = game.players.find((p) => p.did === did);
+						if (!player) return null;
+						return { did, handle: player.handle, role: player.role, addedAt: now };
+					})
+					.filter((f): f is PendingDmFailure => f !== null);
+				if (failures.length > 0) {
+					this.pendingDmRetries.set(game.id, {
+						gameId: game.id,
+						failures,
+						warnedHandles: new Set(failures.map((f) => f.handle)),
+					});
+				}
+			}
 		}
 
 		console.log(
@@ -249,20 +290,31 @@ export class GameManager {
 
 		const game = result.state;
 		this.persist(game);
-		const failed = await this.announceGameStart(game);
-		await this.warnDmFailures(failed, game);
+		const failures = await this.announceGameStart(game);
+		if (failures.length > 0) {
+			this.enterPendingDmState(game, failures);
+		}
 
 		return null;
 	}
 
-	/** DM roles and set up mafia relay. No public Night 0 post — first public post is Day 1. Returns handles that failed to receive DMs. */
-	private async announceGameStart(game: GameState): Promise<string[]> {
+	/** Send role DMs. Returns list of failures (empty = all delivered).
+	 *  If all succeed, also sends mafia relay + Night 0 guidance. */
+	private async announceGameStart(
+		game: GameState,
+		targetDids?: Did[],
+	): Promise<PendingDmFailure[]> {
 		const gameId = game.id;
-		const failedHandles: string[] = [];
+		const now = Date.now();
+		const failures: PendingDmFailure[] = [];
 
-		// DM roles to all players
+		// DM roles to targeted players (or all if not specified)
+		const recipients = targetDids
+			? game.players.filter((p) => targetDids.includes(p.did))
+			: game.players;
+
 		const f = DEFAULT_FLAVOR;
-		for (const player of game.players) {
+		for (const player of recipients) {
 			const alignment = alignmentOf(player.role);
 			const teammates =
 				alignment === 'mafia'
@@ -286,8 +338,22 @@ export class GameManager {
 			}
 
 			const ok = await this.dm.sendDm(player.did, message);
-			if (!ok) failedHandles.push(player.handle);
+			if (!ok) {
+				failures.push({ did: player.did, handle: player.handle, role: player.role, addedAt: now });
+			}
 		}
+
+		if (failures.length > 0) return failures;
+
+		// All DMs delivered — finish game start
+		await this.completeGameStart(game);
+		return [];
+	}
+
+	/** Send mafia relay + Night 0 guidance. Called after all role DMs are confirmed delivered. */
+	private async completeGameStart(game: GameState): Promise<void> {
+		const gameId = game.id;
+		const f = DEFAULT_FLAVOR;
 
 		// Set up mafia relay group (bot-relayed 1:1 DMs since Bluesky lacks group DMs)
 		const mafiaPlayers = game.players.filter((p) => alignmentOf(p.role) === 'mafia');
@@ -309,7 +375,9 @@ export class GameManager {
 			await this.dm.sendDm(player.did, flavor(f.night0Guidance[player.role as Role]));
 		}
 
-		return failedHandles;
+		// Mark DM delivery complete
+		const updated = { ...game, pendingDmDids: [] as Did[] };
+		this.persist(updated);
 	}
 
 	/** Post a public warning about players whose DM settings blocked delivery */
@@ -321,7 +389,7 @@ export class GameManager {
 	): Promise<void> {
 		if (failedHandles.length === 0) return;
 		const handles = failedHandles.map((h) => `@${h}`).join(', ');
-		const text = `⚠️ Couldn't DM ${handles} — either open your Bluesky chat settings or follow @skeetwolf.bsky.social, then rejoin the queue.`;
+		const text = `⚠️ ${handles} — couldn't send you a DM with your role. Either follow @skeetwolf.bsky.social or open your Bluesky chat settings. The game won't start until all players can receive DMs. You have 6 hours before your spot goes to the next player in queue.`;
 		try {
 			if (replyUri && replyCid) {
 				await this.replyNoGame(text, replyUri, replyCid);
@@ -333,6 +401,37 @@ export class GameManager {
 		} catch (err) {
 			console.error(`Failed to post DM warning for game ${game.id}:`, err);
 		}
+	}
+
+	/** Record DM failures and block game from advancing until resolved */
+	private enterPendingDmState(
+		game: GameState,
+		failures: PendingDmFailure[],
+		triggerUri?: string,
+		triggerCid?: string,
+	): void {
+		const pending: PendingDmGame = {
+			gameId: game.id,
+			failures,
+			triggerUri,
+			triggerCid,
+			warnedHandles: new Set<string>(),
+		};
+		this.pendingDmRetries.set(game.id, pending);
+
+		// Persist which DIDs have pending DMs
+		const updated = { ...game, pendingDmDids: failures.map((f) => f.did) };
+		this.persist(updated);
+
+		// Warn failed players (fire-and-forget)
+		const newHandles = failures.map((f) => f.handle);
+		for (const h of newHandles) pending.warnedHandles.add(h);
+		this.warnDmFailures(newHandles, game, triggerUri, triggerCid);
+	}
+
+	/** Check if a game is blocked on pending DM delivery */
+	hasPendingDms(gameId: GameId): boolean {
+		return this.pendingDmRetries.has(gameId);
 	}
 
 	/** Process a vote during day phase */
@@ -460,14 +559,11 @@ export class GameManager {
 			// DM night announcement instead of public post
 			const alivePlayers = state.players.filter((p) => p.alive);
 			for (const player of alivePlayers) {
-				try {
-					await this.dm.sendDm(
-						player.did,
-						`${flavor(DEFAULT_FLAVOR.nightStart)} Night ends in ${formatDuration(state.config.nightDurationMs)}.`,
-					);
-				} catch (err) {
-					console.error(`Failed to DM night start to ${player.did}:`, err);
-				}
+				await this.sendGameDm(
+					state,
+					player.did,
+					`${flavor(DEFAULT_FLAVOR.nightStart)} Night ends in ${formatDuration(state.config.nightDurationMs)}.`,
+				);
 			}
 		}
 
@@ -503,17 +599,14 @@ export class GameManager {
 		if (resolution.investigated) {
 			const targetHandle =
 				state.players.find((p) => p.did === resolution.investigated?.target)?.handle ?? 'unknown';
-			try {
-				await this.dm.sendDm(
-					resolution.investigated.cop,
-					flavor(DEFAULT_FLAVOR.copResult, {
-						target: targetHandle,
-						result: resolution.investigated.result.toUpperCase(),
-					}),
-				);
-			} catch (err) {
-				console.error(`Failed to DM cop result for game ${gameId}:`, err);
-			}
+			await this.sendGameDm(
+				state,
+				resolution.investigated.cop,
+				flavor(DEFAULT_FLAVOR.copResult, {
+					target: targetHandle,
+					result: resolution.investigated.result.toUpperCase(),
+				}),
+			);
 		}
 
 		if (state.winner) {
@@ -692,8 +785,13 @@ export class GameManager {
 
 	/** Run scheduled phase transitions for all expired games */
 	async tick(now: number): Promise<void> {
+		// DM retry loop — process before phase transitions
+		await this.tickDmRetries(now);
+
 		const expired = this.getGamesNeedingTransition(now);
 		for (const { gameId, phaseKind } of expired) {
+			// Skip games blocked on DM delivery
+			if (this.pendingDmRetries.has(gameId)) continue;
 			console.log(`Phase expired for game ${gameId} (${phaseKind})`);
 			if (phaseKind === 'day') {
 				await this.endDay(gameId);
@@ -705,6 +803,7 @@ export class GameManager {
 		// Night 0 early end: check on hourly boundaries only (not on every tick)
 		// to avoid leaking when a player submitted their action.
 		for (const [id, state] of this.games) {
+			if (this.pendingDmRetries.has(id)) continue;
 			if (state.status !== 'active' || state.phase.kind !== 'night' || state.phase.number !== 0) {
 				continue;
 			}
@@ -736,6 +835,158 @@ export class GameManager {
 		}
 	}
 
+	/** Retry failed DMs and handle timeouts with player replacement */
+	private async tickDmRetries(now: number): Promise<void> {
+		for (const [gameId, pending] of this.pendingDmRetries) {
+			let game = this.games.get(gameId);
+			if (!game) {
+				this.pendingDmRetries.delete(gameId);
+				continue;
+			}
+
+			const stillFailing: PendingDmFailure[] = [];
+			const timedOut: PendingDmFailure[] = [];
+
+			for (const failure of pending.failures) {
+				if (now - failure.addedAt >= DM_RETRY_TIMEOUT_MS) {
+					timedOut.push(failure);
+				} else {
+					// Retry the DM
+					const ok = await this.dm.sendDm(failure.did, this.buildRoleDmText(game, failure.did));
+					if (!ok) {
+						stillFailing.push(failure);
+					}
+				}
+			}
+
+			// Handle timed-out players — replace from queue
+			for (const expired of timedOut) {
+				game = this.games.get(gameId) ?? game;
+				const replacement = this.publicQueue.entries[0];
+				if (!replacement) {
+					// No replacement available — post warning
+					try {
+						const text = `⚠️ Game #${gameId} is stalled — @${expired.handle} can't receive DMs and no one is in the queue to replace them.`;
+						if (pending.triggerUri && pending.triggerCid) {
+							await this.replyNoGame(text, pending.triggerUri, pending.triggerCid);
+						} else if (game.announcementUri) {
+							await this.postInThread(game, text, 'player');
+						}
+					} catch (err) {
+						console.error(`Failed to post stall warning for game ${gameId}:`, err);
+					}
+					stillFailing.push(expired); // keep in failures
+					continue;
+				}
+
+				// Pop from queue
+				const { queue } = popQueue(this.publicQueue, 1);
+				this.publicQueue = queue;
+				clearQueueEntries(this.db, [replacement.did]);
+
+				// Swap the player
+				const result = replacePlayer(game, expired.did, replacement.did, replacement.handle);
+				if (!result.ok) {
+					console.error(`replacePlayer failed for game ${gameId}: ${result.error}`);
+					stillFailing.push(expired);
+					continue;
+				}
+				game = result.state;
+				this.persist(game);
+				console.log(`Replaced ${expired.handle} with ${replacement.handle} in game ${gameId}`);
+
+				// Send role DM to replacement
+				const ok = await this.dm.sendDm(
+					replacement.did,
+					this.buildRoleDmText(game, replacement.did),
+				);
+				if (!ok) {
+					// Replacement also can't receive DMs — add them to failures
+					const player = game.players.find((p) => p.did === replacement.did);
+					if (player) {
+						stillFailing.push({
+							did: replacement.did,
+							handle: replacement.handle,
+							role: player.role,
+							addedAt: now,
+						});
+						// Warn the new player
+						if (!pending.warnedHandles.has(replacement.handle)) {
+							pending.warnedHandles.add(replacement.handle);
+							await this.warnDmFailures(
+								[replacement.handle],
+								game,
+								pending.triggerUri,
+								pending.triggerCid,
+							);
+						}
+					}
+				}
+			}
+
+			if (stillFailing.length === 0) {
+				// All resolved — complete game start
+				this.pendingDmRetries.delete(gameId);
+				game = this.games.get(gameId) ?? game;
+				await this.completeGameStart(game);
+				console.log(`DM delivery complete for game ${gameId} — game starting`);
+			} else {
+				pending.failures = stillFailing;
+				const updated = { ...game, pendingDmDids: stillFailing.map((f) => f.did) };
+				this.persist(updated);
+			}
+		}
+	}
+
+	/** Send a DM during an active game. On failure, post a public warning nudging the player. */
+	private async sendGameDm(state: GameState, recipientDid: Did, text: string): Promise<boolean> {
+		const ok = await this.dm.sendDm(recipientDid, text);
+		if (!ok) {
+			const player = state.players.find((p) => p.did === recipientDid);
+			if (player) {
+				const warning = `⚠️ @${player.handle} — couldn't send you a DM. Either follow @skeetwolf.bsky.social or open your Bluesky chat settings so you can receive game messages.`;
+				try {
+					if (state.dayThreadUri) {
+						await this.postInThread(state, warning, 'reply');
+					} else if (state.announcementUri) {
+						await this.postInThread(state, warning, 'reply');
+					}
+				} catch (err) {
+					console.error(`Failed to post mid-game DM warning for ${player.handle}:`, err);
+				}
+			}
+		}
+		return ok;
+	}
+
+	/** Build role DM text for a specific player */
+	private buildRoleDmText(game: GameState, playerDid: Did): string {
+		const player = game.players.find((p) => p.did === playerDid);
+		if (!player) return '';
+		const f = DEFAULT_FLAVOR;
+		const alignment = alignmentOf(player.role);
+		const teammates =
+			alignment === 'mafia'
+				? game.players
+						.filter((p) => alignmentOf(p.role) === 'mafia' && p.did !== player.did)
+						.map((p) => `@${p.handle}`)
+						.join(', ')
+				: null;
+		const roleText = flavor(f.roleAssignment[player.role as Role], {
+			teammates: teammates ?? '',
+		});
+		const playerList = game.players.map((p) => `@${p.handle}`).join(', ');
+		let message = `🐺 Skeetwolf Game #${game.id}\n\nPlayers: ${playerList}\n\n${roleText}`;
+		if (teammates) {
+			message += `\nYour mafia teammates: ${teammates}`;
+		}
+		const faqUrl = process.env['FAQ_URL'];
+		if (faqUrl) {
+			message += `\n\nHow to play: ${faqUrl}`;
+		}
+		return message;
+	}
+
 	private async announceWinner(state: GameState): Promise<void> {
 		const winnersStr = state.players
 			.filter((p) => alignmentOf(p.role) === state.winner)
@@ -756,6 +1007,7 @@ export class GameManager {
 			this.games.delete(state.id);
 			this.mafiaRelayIds.delete(state.id);
 			this.voteCountLastPostedHour.delete(state.id);
+			this.pendingDmRetries.delete(state.id);
 		}
 	}
 
@@ -1039,8 +1291,10 @@ export class GameManager {
 			);
 		}
 
-		const failed = await this.announceGameStart(state);
-		await this.warnDmFailures(failed, state, triggerUri, triggerCid);
+		const failures = await this.announceGameStart(state);
+		if (failures.length > 0) {
+			this.enterPendingDmState(state, failures, triggerUri, triggerCid);
+		}
 	}
 
 	// -- Invite Games --
@@ -1246,8 +1500,10 @@ export class GameManager {
 			);
 		}
 
-		const failed = await this.announceGameStart(state);
-		await this.warnDmFailures(failed, state, triggerUri, triggerCid);
+		const failures = await this.announceGameStart(state);
+		if (failures.length > 0) {
+			this.enterPendingDmState(state, failures, triggerUri, triggerCid);
+		}
 
 		// Mark invite as active and remove from tracking
 		const activatedInvite = { ...invite, status: 'active' as const };

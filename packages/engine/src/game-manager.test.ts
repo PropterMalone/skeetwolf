@@ -655,6 +655,156 @@ describe('GameManager.rehydrateVotes on hydrate', () => {
 	});
 });
 
+describe('GameManager DM retry gate', () => {
+	beforeEach(() => {
+		postCounter = 0;
+	});
+
+	/** Create a mock DM sender that fails for specific DIDs */
+	function createFailingDm(failDids: Set<string>) {
+		const groups = new Map<string, string[]>();
+		const sent: { did: string; text: string }[] = [];
+		const relayed: { groupId: string; text: string }[] = [];
+		return {
+			sender: {
+				async sendDm(did: string, text: string) {
+					sent.push({ did, text });
+					return !failDids.has(did);
+				},
+				createRelayGroup(groupId: string, memberDids: string[]) {
+					groups.set(groupId, memberDids);
+				},
+				async sendToRelayGroup(groupId: string, text: string) {
+					relayed.push({ groupId, text });
+				},
+			},
+			sent,
+			relayed,
+			groups,
+			failDids,
+		};
+	}
+
+	async function setupGameWithFailingDm(failDids: Set<string>) {
+		const dm = createFailingDm(failDids);
+		const manager = new GameManager(createMockDb(), createMockAgent(), dm.sender);
+		await manager.newGame('g1');
+		for (let i = 0; i < 7; i++) {
+			manager.signup('g1', `did:plc:p${i}`, `player${i}.bsky.social`);
+		}
+		await manager.startGame('g1');
+		return { manager, dm };
+	}
+
+	it('blocks game when DM fails — enters pending state', async () => {
+		const { manager } = await setupGameWithFailingDm(new Set(['did:plc:p3']));
+		const game = manager.getGame('g1');
+		expect(game).not.toBeNull();
+		expect(game?.pendingDmDids).toContain('did:plc:p3');
+		expect(manager.hasPendingDms('g1')).toBe(true);
+	});
+
+	it('completes game start after retry succeeds', async () => {
+		const failDids = new Set(['did:plc:p3']);
+		const { manager, dm } = await setupGameWithFailingDm(failDids);
+
+		// Verify game is blocked
+		expect(manager.hasPendingDms('g1')).toBe(true);
+
+		// Fix the DM — next retry should succeed
+		failDids.delete('did:plc:p3');
+		dm.relayed.length = 0;
+
+		// Tick to trigger retry
+		await manager.tick(Date.now());
+
+		// Game should no longer be pending
+		expect(manager.hasPendingDms('g1')).toBe(false);
+
+		// Night 0 guidance DMs should have been sent (completeGameStart)
+		const game = manager.getGame('g1');
+		expect(game?.pendingDmDids).toEqual([]);
+	});
+
+	it('replaces player from queue after 6h timeout', async () => {
+		const failDids = new Set(['did:plc:p3']);
+		const { manager } = await setupGameWithFailingDm(failDids);
+
+		// Add a replacement player to the queue
+		await manager.addToQueue(
+			'did:plc:replacement',
+			'replacement.bsky.social',
+			'at://trigger/post/1',
+			'cid-trigger-1',
+		);
+
+		const game = manager.getGame('g1');
+		expect(game).not.toBeNull();
+
+		// Tick at 6h+ — should trigger replacement
+		const sixHoursLater = Date.now() + 6 * 60 * 60 * 1000 + 1;
+		await manager.tick(sixHoursLater);
+
+		// Check the player was replaced
+		const updated = manager.getGame('g1');
+		expect(updated).not.toBeNull();
+		const replaced = updated?.players.find((p) => p.did === 'did:plc:replacement');
+		expect(replaced).toBeDefined();
+		// Old player should be gone
+		expect(updated?.players.find((p) => p.did === 'did:plc:p3')).toBeUndefined();
+		// Game should have started (no longer pending)
+		expect(manager.hasPendingDms('g1')).toBe(false);
+	});
+
+	it('posts stall warning when queue is empty and timeout expires', async () => {
+		const failDids = new Set(['did:plc:p3']);
+		const mockAgent = createMockAgent();
+		const dm = createFailingDm(failDids);
+		const manager = new GameManager(createMockDb(), mockAgent, dm.sender);
+		await manager.newGame('g1');
+		for (let i = 0; i < 7; i++) {
+			manager.signup('g1', `did:plc:p${i}`, `player${i}.bsky.social`);
+		}
+		await manager.startGame('g1');
+
+		const postsBefore = mockAgent.post.mock.calls.length;
+
+		// Tick at 6h+ with empty queue
+		const sixHoursLater = Date.now() + 6 * 60 * 60 * 1000 + 1;
+		await manager.tick(sixHoursLater);
+
+		// Game should still be pending
+		expect(manager.hasPendingDms('g1')).toBe(true);
+
+		// A stall warning should have been posted
+		const newPosts = mockAgent.post.mock.calls.slice(postsBefore);
+		const stallPost = newPosts.find(
+			// biome-ignore lint/suspicious/noExplicitAny: test mock inspection
+			(c: any) => c[0]?.text?.includes('stalled'),
+		);
+		expect(stallPost).toBeDefined();
+	});
+
+	it('skips phase transitions for pending games', async () => {
+		const failDids = new Set(['did:plc:p3']);
+		const { manager } = await setupGameWithFailingDm(failDids);
+
+		expect(manager.hasPendingDms('g1')).toBe(true);
+
+		// Force phase to be expired
+		const game = manager.getGame('g1');
+		if (!game) throw new Error('expected game');
+		const farFuture = game.phaseStartedAt + game.config.nightDurationMs + 1;
+
+		// Tick should NOT advance the phase (game is blocked on DMs)
+		await manager.tick(farFuture);
+
+		const after = manager.getGame('g1');
+		expect(after?.phase.kind).toBe('night');
+		expect(after?.phase.number).toBe(0);
+	});
+});
+
 describe('GameManager cleanup after game over', () => {
 	beforeEach(() => {
 		postCounter = 0;
