@@ -9,6 +9,7 @@ import {
 	eliminatePlayer,
 	getPhaseDeadline,
 	isPhaseExpired,
+	replacePlayer,
 	resolveNight,
 	submitNightAction,
 	tallyVotes,
@@ -381,5 +382,48 @@ describe('phase timers', () => {
 		state = advancePhase(state); // Night 0 → Day 1
 		const deadline = getPhaseDeadline(state);
 		expect(deadline).toBe(state.phaseStartedAt + state.config.dayDurationMs);
+	});
+});
+
+describe('replacePlayer', () => {
+	function night0Game(): GameState {
+		const state = gameWithPlayers(7);
+		return assignRoles(state, noShuffle).state; // Night 0, active
+	}
+
+	it('swaps player identity while preserving role', () => {
+		const state = night0Game();
+		const oldPlayer = state.players[0]; // godfather
+		if (!oldPlayer) throw new Error('expected player');
+		const result = replacePlayer(state, oldPlayer.did, 'did:plc:newguy', 'newguy.bsky.social');
+		expect(result.ok).toBe(true);
+		const replaced = result.state.players[0];
+		if (!replaced) throw new Error('expected replaced player');
+		expect(replaced.did).toBe('did:plc:newguy');
+		expect(replaced.handle).toBe('newguy.bsky.social');
+		expect(replaced.role).toBe(oldPlayer.role);
+		expect(replaced.alive).toBe(true);
+	});
+
+	it('rejects replacement outside Night 0', () => {
+		let state = night0Game();
+		state = advancePhase(state); // Day 1
+		const result = replacePlayer(state, 'did:plc:player0', 'did:plc:new', 'new');
+		expect(result.ok).toBe(false);
+		expect(result.error).toContain('Night 0');
+	});
+
+	it('rejects if old player not found', () => {
+		const state = night0Game();
+		const result = replacePlayer(state, 'did:plc:nobody', 'did:plc:new', 'new');
+		expect(result.ok).toBe(false);
+		expect(result.error).toContain('not found');
+	});
+
+	it('rejects if new player already in game', () => {
+		const state = night0Game();
+		const result = replacePlayer(state, 'did:plc:player0', 'did:plc:player1', 'player1');
+		expect(result.ok).toBe(false);
+		expect(result.error).toContain('already in game');
 	});
 });

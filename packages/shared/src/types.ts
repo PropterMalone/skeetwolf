@@ -156,4 +156,6 @@ export interface GameState {
 	/** Timestamp when the current phase started (for timer-based transitions) */
 	phaseStartedAt: number;
 	createdAt: number;
+	/** DIDs of players whose role DMs failed delivery. Empty = all delivered. */
+	pendingDmDids: Did[];
 }
