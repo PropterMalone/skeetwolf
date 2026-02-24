@@ -550,42 +550,78 @@ export interface ThreadReply {
 }
 
 /** Fetch all replies in a thread tree (walks nested replies recursively) */
+/**
+ * Fetch all replies in a thread, recursively descending past Bluesky's ~depth-10 truncation.
+ * When a post has replyCount > 0 but no replies returned, we fetch its sub-thread separately.
+ * Caps at MAX_THREAD_FETCHES API calls to prevent runaway requests on huge threads.
+ */
 export async function getThreadReplies(agent: AtpAgent, postUri: string): Promise<ThreadReply[]> {
-	const response = await agent.api.app.bsky.feed.getPostThread({
-		uri: postUri,
-		depth: 100,
-	});
-
-	const thread = response.data.thread;
-	if (thread.$type !== 'app.bsky.feed.defs#threadViewPost') return [];
+	const MAX_THREAD_FETCHES = 20;
 
 	type ThreadNode = {
 		$type?: string;
 		post?: {
 			uri?: string;
+			replyCount?: number;
 			author?: { did?: string; handle?: string };
 			record?: { text?: string };
 		};
 		replies?: ThreadNode[];
 	};
 
+	const seen = new Set<string>();
 	const replies: ThreadReply[] = [];
-	function walk(nodes: unknown[]): void {
-		for (const node of nodes) {
-			const r = node as ThreadNode;
-			if (r.$type !== 'app.bsky.feed.defs#threadViewPost' || !r.post) continue;
-			replies.push({
-				uri: r.post.uri ?? '',
-				authorDid: r.post.author?.did ?? '',
-				authorHandle: r.post.author?.handle ?? '',
-				text: r.post.record?.text ?? '',
-			});
-			if (Array.isArray(r.replies)) walk(r.replies);
+	let fetchCount = 0;
+
+	async function fetchAndWalk(uri: string): Promise<void> {
+		if (fetchCount >= MAX_THREAD_FETCHES) return;
+		fetchCount++;
+
+		const response = await agent.api.app.bsky.feed.getPostThread({
+			uri,
+			depth: 100,
+		});
+
+		const thread = response.data.thread;
+		if (thread.$type !== 'app.bsky.feed.defs#threadViewPost') return;
+
+		const truncatedUris: string[] = [];
+
+		function walk(nodes: unknown[]): void {
+			for (const node of nodes) {
+				const r = node as ThreadNode;
+				if (r.$type !== 'app.bsky.feed.defs#threadViewPost' || !r.post) continue;
+
+				const nodeUri = r.post.uri ?? '';
+				if (seen.has(nodeUri)) continue;
+				seen.add(nodeUri);
+
+				replies.push({
+					uri: nodeUri,
+					authorDid: r.post.author?.did ?? '',
+					authorHandle: r.post.author?.handle ?? '',
+					text: r.post.record?.text ?? '',
+				});
+
+				if (Array.isArray(r.replies) && r.replies.length > 0) {
+					walk(r.replies);
+				} else if ((r.post.replyCount ?? 0) > 0) {
+					// Truncated — has replies but API didn't return them
+					truncatedUris.push(nodeUri);
+				}
+			}
+		}
+
+		const threadView = thread as ThreadNode;
+		if (Array.isArray(threadView.replies)) walk(threadView.replies);
+
+		// Recursively fetch sub-threads from truncated nodes
+		for (const truncUri of truncatedUris) {
+			await fetchAndWalk(truncUri);
 		}
 	}
 
-	const threadView = thread as ThreadNode;
-	if (Array.isArray(threadView.replies)) walk(threadView.replies);
+	await fetchAndWalk(postUri);
 	return replies;
 }
 
