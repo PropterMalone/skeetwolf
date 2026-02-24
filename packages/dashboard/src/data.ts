@@ -24,6 +24,7 @@ interface StoredGameState {
 		nightDurationMs: number;
 	};
 	createdAt: number;
+	flavorPackName?: string;
 }
 
 export interface GameSummary {
@@ -42,6 +43,7 @@ export interface GameDetail {
 	id: string;
 	status: string;
 	phase: { kind: string; number: number };
+	theme: string;
 	players: {
 		handle: string;
 		role: string | null;
@@ -120,6 +122,7 @@ function toDetail(state: StoredGameState): GameDetail {
 		id: state.id,
 		status: state.status,
 		phase: state.phase,
+		theme: state.flavorPackName ?? 'Bluesky Standard',
 		players: state.players.map((p) => ({
 			handle: p.handle,
 			role: isFinished ? p.role : null,

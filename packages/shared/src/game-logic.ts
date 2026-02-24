@@ -19,7 +19,11 @@ import { DEFAULT_CONFIG, alignmentOf } from './types.js';
 
 // -- Game Creation --
 
-export function createGame(id: GameId, config: Partial<GameConfig> = {}): GameState {
+export function createGame(
+	id: GameId,
+	config: Partial<GameConfig> = {},
+	flavorPackName = 'Bluesky Standard',
+): GameState {
 	const now = Date.now();
 	return {
 		id,
@@ -37,6 +41,7 @@ export function createGame(id: GameId, config: Partial<GameConfig> = {}): GameSt
 		phaseStartedAt: now,
 		createdAt: now,
 		pendingDmDids: [],
+		flavorPackName,
 	};
 }
 

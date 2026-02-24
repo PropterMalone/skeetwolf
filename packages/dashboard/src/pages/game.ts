@@ -107,6 +107,7 @@ export function gamePage(game: GameDetail, posts: GamePostRow[]): string {
 		`Game #${game.id}`,
 		`
     <h2>Game #${game.id} ${phaseBadge(game.status, game.phase)}</h2>
+    <p class="theme">Theme: ${game.theme}</p>
     ${winnerText}
     ${wrapLink}
     ${timerInfo}
