@@ -130,17 +130,17 @@ export function parseMention(rawText: string, botHandle?: string): MentionComman
 export function parseDm(rawText: string): DmCommand {
 	const text = rawText.trim();
 
-	const killMatch = text.match(/kill\s+@?([\w.:-]+)/i);
+	const killMatch = text.match(/kill\s+@([\w.:-]+)/i);
 	if (killMatch?.[1]) {
 		return { kind: 'kill', targetHandle: killMatch[1] };
 	}
 
-	const investigateMatch = text.match(/(?:investigate|check)\s+@?([\w.:-]+)/i);
+	const investigateMatch = text.match(/(?:investigate|check)\s+@([\w.:-]+)/i);
 	if (investigateMatch?.[1]) {
 		return { kind: 'investigate', targetHandle: investigateMatch[1] };
 	}
 
-	const protectMatch = text.match(/(?:protect|save)\s+@?([\w.:-]+)/i);
+	const protectMatch = text.match(/(?:protect|save)\s+@([\w.:-]+)/i);
 	if (protectMatch?.[1]) {
 		return { kind: 'protect', targetHandle: protectMatch[1] };
 	}

@@ -393,7 +393,8 @@ describe('full game flow', () => {
 		expect(final.status).toBe('finished');
 
 		const kinds = getPostKinds(db, 'tw1');
-		expect(kinds.get('game_over')).toBe(1);
+		// game_over may produce multiple posts when text exceeds 300-grapheme limit
+		expect(kinds.get('game_over')).toBeGreaterThanOrEqual(1);
 	});
 
 	it('mafia wins — full game to completion', async () => {
@@ -433,7 +434,7 @@ describe('full game flow', () => {
 		expect(final.status).toBe('finished');
 
 		const kinds = getPostKinds(db, gameId);
-		expect(kinds.get('game_over')).toBe(1);
+		expect(kinds.get('game_over')).toBeGreaterThanOrEqual(1);
 	});
 
 	it('night kill produces death post', async () => {
@@ -642,8 +643,9 @@ describe('full game flow', () => {
 		current = mustLoadGame(db, 'mr1');
 		expect(current.phase).toEqual({ kind: 'day', number: 3 });
 
-		// Night kills are embedded in day_thread posts (not separate death records)
+		// Night kills are embedded in day_thread posts (not separate death records).
+		// Each day_thread may produce multiple posts when text exceeds 300-grapheme limit.
 		const kinds = getPostKinds(db, 'mr1');
-		expect(kinds.get('day_thread')).toBe(3);
+		expect(kinds.get('day_thread')).toBeGreaterThanOrEqual(3);
 	});
 });
