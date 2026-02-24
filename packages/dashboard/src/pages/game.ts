@@ -72,6 +72,17 @@ export function gamePage(game: GameDetail, posts: GamePostRow[]): string {
 		? `<p><span class="badge badge-${game.winner}">${game.winner === 'town' ? 'Town' : 'Mafia'} wins!</span></p>`
 		: '';
 
+	// Link to game-over wrap post (has role reveals and setup info)
+	const gameOverPost = posts.find((p) => p.kind === 'game_over');
+	const wrapLink = gameOverPost
+		? (() => {
+				const url = atUriToBskyUrl(gameOverPost.uri);
+				return url
+					? `<p><a href="${url}" target="_blank">View game wrap-up &amp; roles</a></p>`
+					: '';
+			})()
+		: '';
+
 	const votesSection =
 		game.status === 'active' && game.phase.kind === 'day' && game.votes.length > 0
 			? `<h2>Current Votes</h2>
@@ -97,6 +108,7 @@ export function gamePage(game: GameDetail, posts: GamePostRow[]): string {
 		`
     <h2>Game #${game.id} ${phaseBadge(game.status, game.phase)}</h2>
     ${winnerText}
+    ${wrapLink}
     ${timerInfo}
     ${threadLink}
 
