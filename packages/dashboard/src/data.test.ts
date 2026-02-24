@@ -166,10 +166,33 @@ describe('dashboard data', () => {
 		const detail = data.getGame('game1');
 		expect(detail).not.toBeNull();
 		expect(detail?.players).toHaveLength(3);
-		expect(detail?.players[2]?.alignment).toBe('mafia');
+		// Active game — roles/alignment hidden
+		expect(detail?.players[2]?.role).toBeNull();
+		expect(detail?.players[2]?.alignment).toBeNull();
 		expect(detail?.votes[0]?.voterHandle).toBe('alice.bsky.social');
 		expect(detail?.votes[0]?.targetHandle).toBe('carol.bsky.social');
 		expect(detail?.votes[1]?.targetHandle).toBeNull();
+	});
+
+	it('reveals roles and alignment for finished games', () => {
+		const state = makeGameState({
+			id: 'game1',
+			status: 'finished',
+			winner: 'town',
+		});
+		db.prepare('INSERT INTO games (id, state, created_at, updated_at) VALUES (?, ?, ?, ?)').run(
+			'game1',
+			state,
+			1000,
+			2000,
+		);
+
+		data = createDashboardData(TEST_DB);
+		const detail = data.getGame('game1');
+		expect(detail?.players[0]?.role).toBe('villager');
+		expect(detail?.players[0]?.alignment).toBe('town');
+		expect(detail?.players[2]?.role).toBe('godfather');
+		expect(detail?.players[2]?.alignment).toBe('mafia');
 	});
 
 	it('returns game posts in chronological order', () => {
