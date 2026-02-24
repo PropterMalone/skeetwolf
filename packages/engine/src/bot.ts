@@ -34,10 +34,7 @@ function graphemeLength(text: string): number {
  *   3. If a line exceeds limit, split on space boundaries
  *   4. Never split inside an @mention (@+non-whitespace is atomic)
  */
-export function splitForPost(
-	text: string,
-	limit = BLUESKY_MAX_GRAPHEMES,
-): [string, ...string[]] {
+export function splitForPost(text: string, limit = BLUESKY_MAX_GRAPHEMES): [string, ...string[]] {
 	if (graphemeLength(text) <= limit) return [text];
 
 	const paragraphs = text.split('\n\n');
@@ -556,7 +553,7 @@ export interface ThreadReply {
 export async function getThreadReplies(agent: AtpAgent, postUri: string): Promise<ThreadReply[]> {
 	const response = await agent.api.app.bsky.feed.getPostThread({
 		uri: postUri,
-		depth: 6,
+		depth: 100,
 	});
 
 	const thread = response.data.thread;

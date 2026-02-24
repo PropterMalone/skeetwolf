@@ -19,6 +19,24 @@ let BOT_HANDLE = 'skeetwolf.bsky.social';
 
 const POLL_INTERVAL_MS = 30_000;
 const MAX_BACKOFF_MS = 5 * 60 * 1000;
+const POLL_TIMEOUT_MS = 60_000;
+
+/** Run an async function with a timeout. Rejects with an error if the timeout is exceeded. */
+function withTimeout<T>(fn: () => Promise<T>, ms: number, label: string): Promise<T> {
+	return new Promise<T>((resolve, reject) => {
+		const timer = setTimeout(() => reject(new Error(`${label} timed out after ${ms}ms`)), ms);
+		fn().then(
+			(val) => {
+				clearTimeout(timer);
+				resolve(val);
+			},
+			(err) => {
+				clearTimeout(timer);
+				reject(err);
+			},
+		);
+	});
+}
 
 process.on('unhandledRejection', (err) => {
 	console.error('Unhandled rejection:', err);
@@ -82,7 +100,11 @@ async function main() {
 
 		// --- Mentions (independent of DMs) ---
 		try {
-			const { notifications } = await pollMentions(agent);
+			const { notifications } = await withTimeout(
+				() => pollMentions(agent),
+				POLL_TIMEOUT_MS,
+				'pollMentions',
+			);
 
 			const botDid = agent.session?.did;
 			for (const mention of notifications) {
@@ -125,7 +147,11 @@ async function main() {
 		// --- DMs (independent of mentions) ---
 		if (chatAgent) {
 			try {
-				const { messages, latestMessageId } = await pollInboundDms(chatAgent, dmMessageId);
+				const { messages, latestMessageId } = await withTimeout(
+					() => pollInboundDms(chatAgent, dmMessageId),
+					POLL_TIMEOUT_MS,
+					'pollInboundDms',
+				);
 
 				for (const msg of messages) {
 					await handleDm(manager, dm, msg.senderDid, msg.text);
