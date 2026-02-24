@@ -66,6 +66,7 @@ function createMockDm() {
 		sender: {
 			async sendDm(did: string, text: string) {
 				sent.push({ did, text });
+				return true;
 			},
 			createRelayGroup(groupId: string, memberDids: string[]) {
 				groups.set(groupId, memberDids);

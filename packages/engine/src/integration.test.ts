@@ -52,6 +52,7 @@ function createMockDm() {
 		sender: {
 			async sendDm(did: string, text: string) {
 				sent.push({ did, text });
+				return true;
 			},
 			createRelayGroup(_groupId: string, _memberDids: string[]) {},
 			async sendToRelayGroup(_groupId: string, _text: string) {},
