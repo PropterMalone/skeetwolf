@@ -46,6 +46,9 @@ export interface FlavorPack {
 
 	/** Game over — jester wins (eliminated by day vote). {winners}, {roles} */
 	jesterWins: string[];
+
+	/** Vigilante night kill — dawn announcement (separate voice from mafia kill). Keyed by victim's role. {victim} */
+	vigilanteNightKill: Record<Role, string[]>;
 }
 
 export const DEFAULT_FLAVOR: FlavorPack = {
@@ -86,6 +89,11 @@ export const DEFAULT_FLAVOR: FlavorPack = {
 			"@{victim} is gone — but they're grinning from beyond the timeline. The jester never cared about sides.",
 			'@{victim} the jester was taken out in the night. No win for the clown this time.',
 			"The wolves got @{victim}. Little did they know, the jester's chaos was the only thing making this interesting.",
+		],
+		vigilante: [
+			"@{victim}'s gun is cold. The town's vigilante was taken out before they could fire another shot.",
+			'@{victim} the vigilante is gone. The wolves got the one townie who could fight back.',
+			"The wolves silenced @{victim} — the town's trigger finger. No more midnight justice.",
 		],
 	},
 
@@ -132,6 +140,11 @@ export const DEFAULT_FLAVOR: FlavorPack = {
 			"@{victim} is voted out — and they're laughing. The jester WANTED this. You just played yourself.",
 			'The town eliminates @{victim}. A slow, horrible realization dawns: they were the jester. You gave them exactly what they wanted.',
 			"@{victim} takes a bow as they're voted off. The jester wins. The town played right into their hands.",
+		],
+		vigilante: [
+			'@{victim} is voted out. They were the vigilante — the town just eliminated its own gunslinger.',
+			'The town turns on @{victim}. They had a gun and good intentions. Now they have neither. The vigilante is out.',
+			"@{victim} gets the vote. They were the vigilante — the wolves couldn't have asked for a better outcome.",
 		],
 	},
 
@@ -188,6 +201,11 @@ export const DEFAULT_FLAVOR: FlavorPack = {
 			"You're the JESTER. You win if the town votes you out. Night kills don't count. Be annoying, be sus, get eliminated.",
 			"You're the JESTER. Neither town nor mafia — you're here to troll. Get voted out during the day and you win. That's it. That's the whole plan.",
 		],
+		vigilante: [
+			'You\'re the VIGILANTE. Town\'s gunslinger. You have 2 shots — DM me "shoot @handle" at night to take someone out. Choose carefully: friendly fire is permanent.',
+			"You're the VIGILANTE. Two bullets, choose wisely. Each night you can shoot a player. Hit a wolf and you're a hero. Hit town and you just helped the wolves.",
+			"You're the VIGILANTE. Armed and dangerous. 2 shots to use at night via DM. No investigation — just gut instinct and a trigger. Don't miss.",
+		],
 	},
 
 	copResult: [
@@ -233,6 +251,11 @@ export const DEFAULT_FLAVOR: FlavorPack = {
 			'Night 0. No action needed. Start thinking about how to make yourself look suspicious when day breaks.',
 			'Night 0 — sit tight, jester. Your time to shine is during the day. Figure out how to get yourself eliminated.',
 		],
+		vigilante: [
+			"It's Night 0 — no shooting tonight. You have 2 shots for later. Day 1 starts once all night actions are in.",
+			"Night 0. Keep your gun holstered — no kills on Night 0. You'll get your chance starting Night 1.",
+			'Night 0 — hold your fire, vigilante. No shots on the first night. Plan who looks suspicious for later.',
+		],
 	},
 
 	gameStart: [
@@ -246,6 +269,44 @@ export const DEFAULT_FLAVOR: FlavorPack = {
 		'Congratulations — you all just handed the jester a win. They WANTED to be eliminated. Well played, clown.\n\n{winners}\n\n{roles}',
 		'The jester takes their final bow. Eliminated by vote, victorious by design. Everyone else? Outplayed.\n\n{winners}\n\n{roles}',
 	],
+
+	vigilanteNightKill: {
+		villager: [
+			'A gunshot rings out in the dark. @{victim} drops — but they were just a villager. The vigilante got it wrong.',
+			"@{victim} was shot in the night by an unknown hand. They were a villager. Town's own justice misfired.",
+			'The vigilante pulled the trigger on @{victim}. An innocent villager. Friendly fire at its worst.',
+		],
+		cop: [
+			'A shot echoes through the timeline. @{victim} the cop is down — hit by friendly fire from the vigilante.',
+			"The vigilante took out @{victim}. They were the cop. The town's own gunslinger just destroyed its detective.",
+			"@{victim}'s investigation ends with a bullet from their own side. The cop is gone, shot by the vigilante.",
+		],
+		doctor: [
+			'The vigilante shot @{victim} — the doctor. No more saves. The town just shot its own medic.',
+			'@{victim} the doctor takes a bullet from the vigilante. The healer is gone, killed by friendly fire.',
+			"A tragic mistake in the dark. @{victim} the doctor is shot by the town's own vigilante.",
+		],
+		godfather: [
+			'The vigilante lands a clean shot on @{victim}. The godfather drops. A wolf down by vigilante justice.',
+			'@{victim} is shot in the night — by the vigilante, not the wolves. The godfather is dead. Nice aim.',
+			'The vigilante finds the godfather. @{victim} takes a bullet and the wolf pack loses its leader.',
+		],
+		mafioso: [
+			'The vigilante fires true. @{victim} the mafioso is hit. One less wolf thanks to a well-placed shot.',
+			'@{victim} is gunned down by the vigilante. A mafioso, caught by midnight justice.',
+			"A bullet from the vigilante finds @{victim}. They were a mafioso. The town's gunslinger delivers.",
+		],
+		jester: [
+			'The vigilante shot @{victim} — the jester. No victory for the clown. Killed by a bullet, not a vote.',
+			"@{victim} the jester takes a vigilante bullet. They needed to be voted out, not shot. The jester's plan dies with them.",
+			'The vigilante pulls the trigger on @{victim}. The jester is dead — no win, just a bullet.',
+		],
+		vigilante: [
+			'In a bizarre twist, @{victim} the vigilante... shot themselves? No — the vigilante is down.',
+			'@{victim} the vigilante is found dead. A gunslinger with no more shots to fire.',
+			"The vigilante @{victim} is gone. The town's last gun falls silent.",
+		],
+	},
 };
 
 export const NOIR_FLAVOR: FlavorPack = {
@@ -286,6 +347,11 @@ export const NOIR_FLAVOR: FlavorPack = {
 			'@{victim} was found face-down in a puddle of cheap gin, grinning. The fool never picked a side — and now they never will.',
 			"They got @{victim} in the night. The jester's last joke? Nobody laughed.",
 			'@{victim} the jester is gone — rubbed out before they could pull off their grift. No punchline tonight.',
+		],
+		vigilante: [
+			"@{victim}'s piece was still warm when they found the body. The hired gun got clipped before dawn.",
+			'The syndicate got to @{victim} — the one citizen packing heat. No more midnight justice.',
+			'@{victim} the gunslinger is face-down in a rain-slicked alley. The city lost its fastest draw.',
 		],
 	},
 
@@ -332,6 +398,11 @@ export const NOIR_FLAVOR: FlavorPack = {
 			"@{victim} takes a bow as the borough votes them out. The jester played everyone — syndicate and citizens alike. You've been had.",
 			'The borough eliminates @{victim}. Slow realization hits like a slug from a .38: that was the jester. They wanted this.',
 			'@{victim} tips their hat on the way out. The jester wins. The whole borough just got conned.',
+		],
+		vigilante: [
+			'@{victim} is run out of town. They were the hired gun — the only citizen willing to shoot back.',
+			'The borough fingers @{victim}. They were the gunslinger. The syndicate just lost its biggest threat.',
+			'@{victim} gets the boot. They had a .45 and the guts to use it. The hired gun is finished.',
 		],
 	},
 
@@ -388,6 +459,11 @@ export const NOIR_FLAVOR: FlavorPack = {
 			"You're the JESTER. Neither syndicate nor citizen — you're running your own con. Get yourself voted out during the day and you win. The PI sees you as clean.",
 			"You're the JESTER. Neutral party in a dirty city. Get the borough to finger you for elimination and you walk away the winner. Night hits don't count.",
 		],
+		vigilante: [
+			"You're the HIRED GUN. Two rounds in the chamber. DM me \"shoot @handle\" at night to put someone down. Hit syndicate and you're a hero. Hit a citizen and you just did the mob's job for them.",
+			"You're the HIRED GUN. A citizen with a pistol and a grudge. 2 shots — use them at night via DM. No badge, no backup. Just aim and pray.",
+			"You're the HIRED GUN. Two bullets, two chances to clean up this city. DM me your target at night. Shoot straight — friendly fire is permanent.",
+		],
 	},
 
 	copResult: [
@@ -433,6 +509,11 @@ export const NOIR_FLAVOR: FlavorPack = {
 			'Night 0. No moves yet. Start figuring out how to make yourself look guilty when the sun comes up.',
 			'Night 0 — sit tight, wildcard. Your act starts at dawn. Figure out how to get the borough to point the finger at you.',
 		],
+		vigilante: [
+			"Night 0 — holster the piece. No shooting on the first night. You've got 2 rounds for later.",
+			'Night 0. Keep the gun cold, hired gun. No kills tonight. Day 1 starts once all night actions are in.',
+			'Night 0 — no targets yet. Save those bullets. The syndicate will show themselves soon enough.',
+		],
 	},
 
 	gameStart: [
@@ -446,6 +527,44 @@ export const NOIR_FLAVOR: FlavorPack = {
 		'Case closed — but not the way anyone expected. The jester got themselves pinched on purpose. Whole borough got conned.\n\n{winners}\n\n{roles}',
 		'The jester tips their hat from the curb. Eliminated by vote, winner by design. This rotten city just got out-rotted.\n\n{winners}\n\n{roles}',
 	],
+
+	vigilanteNightKill: {
+		villager: [
+			'A shot cracks through the fog. @{victim} drops — just a citizen. The hired gun missed the mark.',
+			'@{victim} caught a bullet in the dark. They were clean — an honest citizen. The gunslinger got sloppy.',
+			'The hired gun plugged @{victim}. Wrong target — just a citizen. This city eats its own.',
+		],
+		cop: [
+			'A muzzle flash in the alley. @{victim} the PI goes down — shot by the hired gun. Friendly fire.',
+			'The hired gun took out @{victim}. They were the private eye. The city just shot its own detective.',
+			'@{victim} the gumshoe catches a bullet from the wrong side. The hired gun clipped the PI.',
+		],
+		doctor: [
+			'The hired gun shot @{victim} — the sawbones. No more patching people up. Friendly fire at its worst.',
+			'@{victim} the doc takes a slug from the hired gun. The city just lost its only healer.',
+			'A bullet from the hired gun finds @{victim}. They were the sawbones. Tragic miscalculation.',
+		],
+		godfather: [
+			'The hired gun lands a clean shot. @{victim} the godfather drops. The syndicate boss, taken out vigilante-style.',
+			'@{victim} catches a bullet in the dark — from the hired gun, not the law. The godfather is finished.',
+			'The hired gun found the boss. @{victim} the godfather goes down. Nice shooting.',
+		],
+		mafioso: [
+			'The hired gun fires true. @{victim} the enforcer takes a slug. One less syndicate goon.',
+			'@{victim} is gunned down by the hired gun. A syndicate rat, plugged in the dark.',
+			"A bullet from the hired gun finds @{victim}. They were an enforcer. The city's gunslinger delivers.",
+		],
+		jester: [
+			"The hired gun shot @{victim} — the jester. No con, no vote, just a bullet. The fool's grift dies here.",
+			'@{victim} the jester takes a slug from the hired gun. They needed the vote, not a bullet.',
+			'The hired gun plugs @{victim}. The jester is dead — no exit scam, just lead.',
+		],
+		vigilante: [
+			'The hired gun @{victim} is found in a doorway, gun still warm. Even gunslingers run out of luck.',
+			"@{victim} the hired gun is gone. The city's last triggerman won't be firing again.",
+			'They found @{victim} at dawn — the hired gun, silenced for good.',
+		],
+	},
 };
 
 export const CORPORATE_FLAVOR: FlavorPack = {
@@ -486,6 +605,11 @@ export const CORPORATE_FLAVOR: FlavorPack = {
 			"@{victim} was terminated overnight. The office contrarian won't be derailing any more meetings — and they never got their severance package.",
 			"@{victim}'s badge was deactivated at 3 AM. The company jester is out, and they never got to execute their real exit strategy.",
 			'@{victim} the office provocateur got laid off before they could get themselves fired on purpose. No golden parachute for the jester.',
+		],
+		vigilante: [
+			"@{victim}'s anonymous tip line is disconnected. The whistleblower got restructured before they could blow the lid off.",
+			"The saboteurs silenced @{victim} — the company's own whistleblower. No more leaked memos.",
+			'@{victim} the whistleblower was terminated at 4 AM. The one employee willing to take direct action is gone.',
 		],
 	},
 
@@ -532,6 +656,11 @@ export const CORPORATE_FLAVOR: FlavorPack = {
 			"@{victim} is voted out — and they're grinning through the exit interview. The office jester WANTED to be fired. You just gave them the severance package of a lifetime.",
 			"The team terminates @{victim}. Then it dawns on everyone: they were the jester. They've been angling for this PIP since day one.",
 			'@{victim} cleans out their desk with a smile. The jester wins. The whole company just got played by someone who wanted to be fired.',
+		],
+		vigilante: [
+			'@{victim} is voted out. They were the whistleblower — the one employee willing to take matters into their own hands.',
+			'The team turns on @{victim}. They had evidence and initiative. Now they have a cardboard box. The whistleblower is out.',
+			"@{victim} gets the vote. They were the whistleblower — the saboteurs just got their biggest threat PIP'd out.",
 		],
 	},
 
@@ -588,6 +717,11 @@ export const CORPORATE_FLAVOR: FlavorPack = {
 			"You're the OFFICE JESTER. Your only KPI: get terminated by popular vote. Derail meetings, act suspicious, get yourself on a PIP. Night eliminations don't trigger your win.",
 			"You're the OFFICE JESTER. Neutral agent of chaos in the org chart. Get the team to vote you out and you walk away victorious. Audits show you as a regular employee.",
 		],
+		vigilante: [
+			'You\'re the WHISTLEBLOWER. You can take direct action against saboteurs. 2 shots — DM me "shoot @handle" at night. Hit a saboteur and you\'re employee of the month. Hit a colleague and you just created an HR nightmare.',
+			"You're the WHISTLEBLOWER. Armed with evidence and the authority to act. 2 shots at night via DM. Choose your targets carefully — wrongful termination is permanent.",
+			"You're the WHISTLEBLOWER. Two chances to take out a saboteur directly. DM me your target at night. No audit required — just conviction and a trigger finger.",
+		],
 	},
 
 	copResult: [
@@ -633,6 +767,11 @@ export const CORPORATE_FLAVOR: FlavorPack = {
 			'Night 0. No action needed. Start drafting your plan to look as suspicious as possible when the workday starts.',
 			'Night 0 — sit tight, office jester. Your performance review starts at dawn. Figure out how to get yourself on the chopping block.',
 		],
+		vigilante: [
+			'Night 0 — no action tonight, whistleblower. You have 2 shots for later. Day 1 starts once all night actions are in.',
+			"Night 0. Keep the evidence holstered — no terminations on Night 0. You'll get your chance starting Night 1.",
+			'Night 0 — hold off, whistleblower. No direct action on the first night. Observe who looks suspicious at the standup.',
+		],
 	},
 
 	gameStart: [
@@ -646,6 +785,44 @@ export const CORPORATE_FLAVOR: FlavorPack = {
 		'Congratulations — the whole company just handed the jester a golden parachute. They WANTED to be terminated. HR is speechless.\n\n{winners}\n\n{roles}',
 		'The jester walks out with a box of personal items and a victory lap. Voted off the org chart by design. Everyone else? Played.\n\n{winners}\n\n{roles}',
 	],
+
+	vigilanteNightKill: {
+		villager: [
+			'The whistleblower filed a report on @{victim}. Turns out they were just an employee. Wrongful termination — HR is furious.',
+			"@{victim} got taken out by the whistleblower overnight. They were a loyal employee. Someone's getting sued.",
+			"The whistleblower pulled the trigger on @{victim}. Just a regular employee. That's a wrongful termination lawsuit waiting to happen.",
+		],
+		cop: [
+			'The whistleblower terminated @{victim} — the internal auditor. The company just lost its compliance department to friendly fire.',
+			'@{victim} the auditor was taken out by the whistleblower. The one person checking the books is gone.',
+			"The whistleblower got @{victim}. They were the auditor. Who's reviewing the expense reports now?",
+		],
+		doctor: [
+			"The whistleblower took out @{victim} — HR. Nobody's blocking terminations now. Friendly fire at the worst possible time.",
+			'@{victim} from HR got the whistleblower treatment. The company just lost its safety net.',
+			'The whistleblower terminated @{victim}. They were HR. The saboteurs are sending celebratory Slacks.',
+		],
+		godfather: [
+			'The whistleblower nails @{victim}. The ringleader is out — taken down by direct action, not an audit.',
+			'@{victim} gets a midnight termination from the whistleblower. The head saboteur is gone. Employee of the month material.',
+			'The whistleblower found the ringleader. @{victim} is terminated effective immediately.',
+		],
+		mafioso: [
+			'The whistleblower fires @{victim}. A saboteur, caught by direct action. One less mole on the payroll.',
+			'@{victim} gets terminated by the whistleblower overnight. They were a saboteur. Clean hit.',
+			'The whistleblower takes out @{victim}. A corporate saboteur, removed without committee approval.',
+		],
+		jester: [
+			'The whistleblower terminated @{victim} — the office jester. They needed to be voted out, not fired overnight. No severance for the clown.',
+			"@{victim} the jester got the whistleblower's axe. Wrong kind of termination — the jester's plan is dead.",
+			'The whistleblower took out @{victim}. The jester wanted a public firing, not a quiet layoff. No win.',
+		],
+		vigilante: [
+			"The whistleblower @{victim} was found at their desk at 6 AM, badge revoked. Even direct-action employees aren't safe.",
+			"@{victim} the whistleblower is gone. The company's most proactive employee won't be filing any more reports.",
+			'They got @{victim} — the whistleblower. The one employee willing to act is terminated.',
+		],
+	},
 };
 
 export const VICTORIAN_FLAVOR: FlavorPack = {
@@ -686,6 +863,11 @@ export const VICTORIAN_FLAVOR: FlavorPack = {
 			'@{victim} was found at dawn with a peculiar smile upon their face. The fool belonged to no faction — and now belongs to no one at all.',
 			"The society struck down @{victim} in the night. The jester's grand performance ends before the final act.",
 			'@{victim} the court jester perished in the fog. No victory for the fool — their scheme dies with them.',
+		],
+		vigilante: [
+			"@{victim}'s pistol was found beside them, unfired. The duelist was struck down before dawn.",
+			"The society silenced @{victim} — the borough's lone duelist. No more midnight justice by pistol.",
+			'@{victim} the duelist lies cold in the fog. The one citizen willing to draw steel is gone.',
 		],
 	},
 
@@ -732,6 +914,11 @@ export const VICTORIAN_FLAVOR: FlavorPack = {
 			"@{victim} curtsies as the borough casts them out. The fool WISHED for this condemnation. You've all been played most thoroughly.",
 			'The borough condemns @{victim}. A dreadful realization follows: the jester desired nothing more than expulsion. They have won.',
 			'@{victim} takes their leave with a mocking bow. The court jester is victorious — the borough handed them exactly what they sought.',
+		],
+		vigilante: [
+			'@{victim} is condemned. They were the duelist — the one citizen brave enough to take up arms against the society.',
+			'The borough casts out @{victim}. They were the duelist. The society raises a toast behind closed doors.',
+			"@{victim} the duelist is expelled. The borough just disarmed itself against the society's midnight plots.",
 		],
 	},
 
@@ -788,6 +975,11 @@ export const VICTORIAN_FLAVOR: FlavorPack = {
 			'You are the COURT JESTER. Neither loyal subject nor conspirator — merely a fool with a scheme. Get yourself voted out and you are victorious. Night murders do not count.',
 			"You are the COURT JESTER. Neutral agent of mischief in the borough. Arrange your own condemnation by the people's vote and you win. The inspector's inquiries reveal nothing suspicious.",
 		],
+		vigilante: [
+			'You are the DUELIST. A citizen of honour who settles matters with a pistol. You have 2 shots — DM me "shoot @handle" at night. Strike true, and the society loses a member. Miss, and an innocent falls.',
+			'You are the DUELIST. Two rounds in your flintlock. Each night you may fire upon a suspect. DM me your target. Precision is paramount — friendly fire is most permanent.',
+			'You are the DUELIST. Armed and resolute. 2 shots to dispatch members of the society at night via DM. No investigation — only instinct and a steady hand.',
+		],
 	},
 
 	copResult: [
@@ -833,6 +1025,11 @@ export const VICTORIAN_FLAVOR: FlavorPack = {
 			'Night 0. No action required. Consider how best to arouse suspicion when the borough convenes at dawn.',
 			'Night 0 — rest now, court jester. Your performance begins with the morning light. Plan how to secure your own condemnation.',
 		],
+		vigilante: [
+			'Night 0 — keep your pistol holstered, duelist. No shots on the first night. You have 2 rounds for later.',
+			'Night 0. The duel awaits, but not tonight. Day 1 begins once all night actions are submitted.',
+			'Night 0 — patience, duelist. No firing on the first evening. The society shall reveal itself soon enough.',
+		],
 	},
 
 	gameStart: [
@@ -846,6 +1043,44 @@ export const VICTORIAN_FLAVOR: FlavorPack = {
 		'The fool takes their final bow. Expelled by vote, triumphant by cunning. The borough has been made to look quite ridiculous.\n\n{winners}\n\n{roles}',
 		"The jester's laughter echoes through the gaslit streets. They sought condemnation and received it. Everyone else? Merely players in the fool's grand theatre.\n\n{winners}\n\n{roles}",
 	],
+
+	vigilanteNightKill: {
+		villager: [
+			"A pistol shot echoes through the fog. @{victim} falls — but they were merely a citizen. The duelist's aim was tragically misplaced.",
+			"@{victim} was shot at dawn by an unknown hand. A respectable citizen, felled by the duelist's error.",
+			'The duelist fired upon @{victim}. An innocent citizen of the borough. A most grievous mistake.',
+		],
+		cop: [
+			"A shot rings out near Scotland Yard. @{victim} the inspector is down — struck by the duelist's own bullet.",
+			'The duelist took @{victim} for a conspirator. They were the inspector. The borough has lost its finest to friendly fire.',
+			"@{victim}'s investigation ends with a duelist's bullet. The inspector is gone, slain by an ally.",
+		],
+		doctor: [
+			"The duelist shot @{victim} — the physician. No more midnight house calls. The borough's healer falls to friendly fire.",
+			'@{victim} the physician takes a bullet from the duelist. The one who kept the borough alive is gone.',
+			"A tragic error in the gaslight. Dr. @{victim} is shot by the borough's own duelist.",
+		],
+		godfather: [
+			'The duelist fires true. @{victim} the grandmaster falls. The society loses its architect to a well-aimed shot.',
+			'@{victim} is struck down by the duelist — not the mob. The grandmaster of the society meets a fitting end.',
+			'The duelist finds the grandmaster. @{victim} takes a bullet, and the society is left leaderless.',
+		],
+		mafioso: [
+			"The duelist's aim proves true. @{victim} the cultist is struck down. One less conspirator in the borough.",
+			'@{victim} is shot by the duelist at midnight. A cultist, dispatched by vigilante justice.',
+			'A bullet from the duelist finds @{victim}. They were a cultist of the society. Well struck.',
+		],
+		jester: [
+			'The duelist shot @{victim} — the court jester. The fool needed condemnation, not a bullet. No victory for the jester.',
+			"@{victim} the jester takes a duelist's bullet. They required a public vote, not a midnight execution.",
+			'The duelist fires upon @{victim}. The court jester is dead — no condemnation, no victory.',
+		],
+		vigilante: [
+			'The duelist @{victim} is found at dawn, pistol at their side. Even a marksman cannot dodge every shadow.',
+			"@{victim} the duelist shall fire no more. The borough's armed protector has fallen.",
+			'They found @{victim} in the fog — the duelist, silenced at last.',
+		],
+	},
 };
 
 export const MONSTER_MASH_FLAVOR: FlavorPack = {
@@ -886,6 +1121,11 @@ export const MONSTER_MASH_FLAVOR: FlavorPack = {
 			"@{victim} was found at dawn wearing a grin and a jester's cap. The village trickster got eaten before they could pull off their grand prank.",
 			'The monsters devoured @{victim} the jester in the night. No glorious village exile for the fool — just a midnight snack.',
 			"@{victim} the jester is gone. The creatures didn't know they were supposed to let the clown get voted out first.",
+		],
+		vigilante: [
+			"@{victim}'s silver bullets are scattered across the ground. The marksman was devoured before they could fire another shot.",
+			"The monsters got @{victim} — the village's silver bullet marksman. No more midnight hunts.",
+			'@{victim} the marksman is gone. The creatures silenced the one villager with the firepower to fight back.',
 		],
 	},
 
@@ -932,6 +1172,11 @@ export const MONSTER_MASH_FLAVOR: FlavorPack = {
 			"@{victim} does a little dance as the mob chases them out. The jester WANTED the pitchforks! You've all been pranked!",
 			'The village drives out @{victim}. Then the terrible truth sinks in: the jester wanted to be banished. It was all part of the act.',
 			"@{victim} cartwheels past the angry mob. The village jester wins — they've been trying to get exiled this whole time!",
+		],
+		vigilante: [
+			'@{victim} is chased out by the mob. They were the marksman — the one villager with silver bullets.',
+			'The village turns on @{victim}. They had a gun loaded with silver. Now they have nothing. The marksman is out.',
+			'@{victim} gets the pitchforks. They were the marksman — the monsters just lost their biggest threat.',
 		],
 	},
 
@@ -988,6 +1233,11 @@ export const MONSTER_MASH_FLAVOR: FlavorPack = {
 			"You're the VILLAGE JESTER. Neutral trickster in a village full of monsters. Your goal: get voted out by the angry mob. Night kills don't trigger your win.",
 			"You're the VILLAGE JESTER. Not a monster, not a villager — just chaotic. Get yourself banished by the village vote and you're victorious. The hunter's traps read you as human.",
 		],
+		vigilante: [
+			'You\'re the MARKSMAN. Armed with 2 silver bullets. DM me "shoot @handle" at night to take a shot. Hit a monster and you\'re the village hero. Hit a villager and you just fed the creatures.',
+			"You're the MARKSMAN. Two silver bullets, two chances to slay a monster. DM me your target at night. Choose wisely — friendly fire is very permanent.",
+			"You're the MARKSMAN. The village's silver bullet specialist. 2 shots at night via DM. No traps, no potions — just aim and silver. Don't miss.",
+		],
 	},
 
 	copResult: [
@@ -1033,6 +1283,11 @@ export const MONSTER_MASH_FLAVOR: FlavorPack = {
 			'Night 0. No action needed. Start planning how to look as suspicious as possible when the villagers gather at dawn.',
 			'Night 0 — sit tight, jester. Your performance starts when the sun rises. Figure out how to get the pitchforks pointed at you.',
 		],
+		vigilante: [
+			'Night 0 — keep the silver holstered, marksman. No shooting on the first night. You have 2 rounds for later.',
+			'Night 0. Save your silver bullets — no kills tonight. Day 1 starts once all night actions are in.',
+			'Night 0 — hold your fire, marksman. The creatures will show themselves soon enough. No shots on Night 0.',
+		],
 	},
 
 	gameStart: [
@@ -1046,6 +1301,44 @@ export const MONSTER_MASH_FLAVOR: FlavorPack = {
 		'The mob chased the jester out — exactly as planned. Pitchforks, torches, the whole show. And the jester? Taking a bow on the other side of the village wall.\n\n{winners}\n\n{roles}',
 		'The village jester wins! Driven out by angry mob, victorious by design. The monsters are confused. The villagers are furious. The jester is laughing.\n\n{winners}\n\n{roles}',
 	],
+
+	vigilanteNightKill: {
+		villager: [
+			'A silver bullet finds @{victim} in the dark. But they were just a villager. The marksman wasted precious ammo.',
+			'@{victim} was shot with a silver bullet at midnight. They were human — just a villager. The marksman got it wrong.',
+			'The marksman fired on @{victim}. An innocent villager, felled by friendly silver. A tragic waste.',
+		],
+		cop: [
+			"A silver bullet strikes @{victim} — the monster hunter. The marksman just took out the village's detective.",
+			"The marksman shot @{victim}. They were the monster hunter. The village's investigator, killed by friendly fire.",
+			'@{victim} the hunter takes a silver bullet from the marksman. The one who could track the creatures is gone.',
+		],
+		doctor: [
+			'The marksman shot @{victim} — the mad scientist. No more potions, no more cures. Friendly fire at its worst.',
+			'@{victim} the mad scientist takes a silver bullet from the marksman. The village just lost its healer.',
+			'A silver bullet from the marksman finds @{victim}. They were the mad scientist. A monstrous mistake.',
+		],
+		godfather: [
+			'The marksman fires a silver bullet into @{victim}. The alpha monster howls and falls. A perfect shot.',
+			'@{victim} is struck by silver — from the marksman, not the hunter. The alpha creature is destroyed.',
+			'The marksman finds the alpha. @{victim} takes a silver bullet and the monster pack loses its leader.',
+		],
+		mafioso: [
+			"The marksman's silver finds its mark. @{victim} the creature is hit. One less monster thanks to a well-aimed shot.",
+			"@{victim} is struck down by the marksman's silver bullet. A creature, caught by midnight justice.",
+			"A silver bullet from the marksman pierces @{victim}. They were a creature. The village's gunslinger delivers.",
+		],
+		jester: [
+			"The marksman shot @{victim} — the jester. No pitchforks, no exile, just silver. The fool's prank dies with them.",
+			'@{victim} the jester takes a silver bullet from the marksman. They needed the mob, not a bullet. No win for the clown.',
+			'The marksman fires on @{victim}. The jester is dead — no banishment, no victory, just silver.',
+		],
+		vigilante: [
+			"The marksman @{victim} is found at dawn, silver bullets scattered around them. Even the best shot can't dodge every monster.",
+			"@{victim} the marksman is gone. The village's silver bullet specialist won't be firing again.",
+			'They found @{victim} at sunrise — the marksman, silenced in the night.',
+		],
+	},
 };
 
 /** Pick a random variant from an array */

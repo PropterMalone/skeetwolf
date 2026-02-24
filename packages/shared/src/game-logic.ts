@@ -42,6 +42,7 @@ export function createGame(
 		createdAt: now,
 		pendingDmDids: [],
 		flavorPackName,
+		vigilanteShots: 0,
 	};
 }
 
@@ -97,6 +98,7 @@ export function assignRoles(
 		return { ...p, role };
 	});
 
+	const hasVigilante = roles.includes('vigilante');
 	return {
 		ok: true,
 		state: {
@@ -105,6 +107,7 @@ export function assignRoles(
 			status: 'active',
 			phase: { kind: 'night', number: 0 },
 			phaseStartedAt: Date.now(),
+			vigilanteShots: hasVigilante ? 2 : 0,
 		},
 	};
 }
@@ -119,6 +122,8 @@ const ROLE_DESCRIPTIONS: Record<Role, string> = {
 		'Villager — Town citizen. No special ability. Use discussion and voting to find the mafia.',
 	jester:
 		'Jester — Neutral wildcard. Win by getting yourself eliminated during the day vote. You have no night action. If you die at night, you lose.',
+	vigilante:
+		'Vigilante — Town gunslinger. Has 2 shots to kill a player at night. Choose wisely — friendly fire is permanent.',
 };
 
 /** Describe the role setup for a game — counts + descriptions. For defined-role games
@@ -153,6 +158,9 @@ export function buildRolePool(playerCount: number): Role[] {
 	// Town power roles (only if enough players)
 	if (playerCount >= 6) roles.push('cop');
 	if (playerCount >= 7) roles.push('doctor');
+
+	// Additional town power roles
+	if (playerCount >= 9) roles.push('vigilante');
 
 	// Neutral roles
 	if (playerCount >= 8) roles.push('jester');
@@ -258,8 +266,13 @@ export function submitNightAction(state: GameState, action: NightAction): Action
 	}
 
 	// No kills on Night 0 — info-gathering only
-	if (action.kind === 'kill' && state.phase.number === 0) {
+	if ((action.kind === 'kill' || action.kind === 'vigilante_kill') && state.phase.number === 0) {
 		return { ok: false, error: 'no kills on Night 0', state };
+	}
+
+	// Vigilante shot limit
+	if (action.kind === 'vigilante_kill' && state.vigilanteShots <= 0) {
+		return { ok: false, error: 'no shots remaining', state };
 	}
 
 	// Validate action matches role
@@ -289,29 +302,42 @@ function canPerformAction(role: Role, action: NightAction['kind']): boolean {
 			return role === 'cop';
 		case 'protect':
 			return role === 'doctor';
+		case 'vigilante_kill':
+			return role === 'vigilante';
 	}
 }
 
 // -- Night Resolution --
 
 export interface NightResolution {
-	killed: Did | null;
+	mafiaKilled: Did | null;
+	vigilanteKilled: Did | null;
 	investigated: { cop: Did; target: Did; result: 'town' | 'mafia' } | null;
 	state: GameState;
 }
 
 export function resolveNight(state: GameState): NightResolution {
 	const killAction = state.nightActions.find((a) => a.kind === 'kill');
+	const vigAction = state.nightActions.find((a) => a.kind === 'vigilante_kill');
 	const protectAction = state.nightActions.find((a) => a.kind === 'protect');
 	const investigateAction = state.nightActions.find((a) => a.kind === 'investigate');
 
-	let killed: Did | null = null;
+	let mafiaKilled: Did | null = null;
+	let vigilanteKilled: Did | null = null;
 
-	// Resolve kill (blocked by doctor protection)
+	// Resolve mafia kill (blocked by doctor protection)
 	if (killAction) {
 		const isProtected = protectAction?.target === killAction.target;
 		if (!isProtected) {
-			killed = killAction.target;
+			mafiaKilled = killAction.target;
+		}
+	}
+
+	// Resolve vigilante kill (also blocked by doctor protection)
+	if (vigAction) {
+		const isProtected = protectAction?.target === vigAction.target;
+		if (!isProtected) {
+			vigilanteKilled = vigAction.target;
 		}
 	}
 
@@ -326,18 +352,29 @@ export function resolveNight(state: GameState): NightResolution {
 		}
 	}
 
-	// Apply kill
-	const players = killed
-		? state.players.map((p) => (p.did === killed ? { ...p, alive: false } : p))
-		: state.players;
+	// Collect unique kill targets
+	const deadDids = new Set<Did>();
+	if (mafiaKilled) deadDids.add(mafiaKilled);
+	if (vigilanteKilled) deadDids.add(vigilanteKilled);
+
+	// Apply kills
+	const players =
+		deadDids.size > 0
+			? state.players.map((p) => (deadDids.has(p.did) ? { ...p, alive: false } : p))
+			: state.players;
+
+	// Decrement vigilante shots if vig submitted an action (regardless of protection)
+	const vigilanteShots = vigAction ? state.vigilanteShots - 1 : state.vigilanteShots;
 
 	return {
-		killed,
+		mafiaKilled,
+		vigilanteKilled,
 		investigated,
 		state: {
 			...state,
 			players,
 			nightActions: [],
+			vigilanteShots,
 		},
 	};
 }

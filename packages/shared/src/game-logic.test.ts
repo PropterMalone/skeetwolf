@@ -230,7 +230,7 @@ describe('night actions', () => {
 		}).state;
 
 		const resolution = resolveNight(state);
-		expect(resolution.killed).toBe('did:plc:player4');
+		expect(resolution.mafiaKilled).toBe('did:plc:player4');
 		expect(resolution.state.players.find((p) => p.did === 'did:plc:player4')?.alive).toBe(false);
 	});
 
@@ -248,7 +248,7 @@ describe('night actions', () => {
 		}).state;
 
 		const resolution = resolveNight(state);
-		expect(resolution.killed).toBeNull();
+		expect(resolution.mafiaKilled).toBeNull();
 		expect(resolution.state.players.find((p) => p.did === 'did:plc:player4')?.alive).toBe(true);
 	});
 
@@ -488,5 +488,186 @@ describe('jester role', () => {
 		const state = gameWithPlayers(8);
 		const game = assignRoles(state, noShuffle).state;
 		expect(isJesterElimination(game, 'did:plc:player0')).toBe(false);
+	});
+});
+
+describe('vigilante role', () => {
+	// 9 players with noShuffle: godfather(0), mafioso(1), mafioso(2), cop(3), doctor(4),
+	// vigilante(5), jester(6), villager(7), villager(8)
+	function game9(): GameState {
+		return gameWithPlayers(9);
+	}
+
+	function night1Game9(): GameState {
+		const state = game9();
+		let game = assignRoles(state, noShuffle).state;
+		game = advancePhase(game); // Night 0 → Day 1
+		game = advancePhase(game); // Day 1 → Night 1
+		return game;
+	}
+
+	it('buildRolePool includes vigilante at 9+ players', () => {
+		expect(buildRolePool(9)).toContain('vigilante');
+	});
+
+	it('buildRolePool does not include vigilante at 8 players', () => {
+		expect(buildRolePool(8)).not.toContain('vigilante');
+	});
+
+	it('assignRoles sets vigilanteShots to 2 when vigilante is present', () => {
+		const state = game9();
+		const result = assignRoles(state, noShuffle);
+		expect(result.state.vigilanteShots).toBe(2);
+	});
+
+	it('assignRoles sets vigilanteShots to 0 when no vigilante', () => {
+		const state = gameWithPlayers(7);
+		const result = assignRoles(state, noShuffle);
+		expect(result.state.vigilanteShots).toBe(0);
+	});
+
+	it('only vigilante can perform vigilante_kill', () => {
+		const game = night1Game9();
+		// Godfather cannot shoot
+		const r1 = submitNightAction(game, {
+			actor: 'did:plc:player0',
+			kind: 'vigilante_kill',
+			target: 'did:plc:player7',
+		});
+		expect(r1.ok).toBe(false);
+		expect(r1.error).toContain('cannot perform');
+
+		// Vigilante can shoot
+		const r2 = submitNightAction(game, {
+			actor: 'did:plc:player5',
+			kind: 'vigilante_kill',
+			target: 'did:plc:player7',
+		});
+		expect(r2.ok).toBe(true);
+	});
+
+	it('blocks vigilante_kill on Night 0', () => {
+		const state = game9();
+		const game = assignRoles(state, noShuffle).state;
+		const result = submitNightAction(game, {
+			actor: 'did:plc:player5',
+			kind: 'vigilante_kill',
+			target: 'did:plc:player7',
+		});
+		expect(result.ok).toBe(false);
+		expect(result.error).toContain('Night 0');
+	});
+
+	it('resolves vigilante kill when unprotected', () => {
+		let game = night1Game9();
+		game = submitNightAction(game, {
+			actor: 'did:plc:player5', // vigilante
+			kind: 'vigilante_kill',
+			target: 'did:plc:player7',
+		}).state;
+
+		const resolution = resolveNight(game);
+		expect(resolution.vigilanteKilled).toBe('did:plc:player7');
+		expect(resolution.state.players.find((p) => p.did === 'did:plc:player7')?.alive).toBe(false);
+	});
+
+	it('doctor blocks vigilante kill', () => {
+		let game = night1Game9();
+		game = submitNightAction(game, {
+			actor: 'did:plc:player5', // vigilante
+			kind: 'vigilante_kill',
+			target: 'did:plc:player7',
+		}).state;
+		game = submitNightAction(game, {
+			actor: 'did:plc:player4', // doctor
+			kind: 'protect',
+			target: 'did:plc:player7',
+		}).state;
+
+		const resolution = resolveNight(game);
+		expect(resolution.vigilanteKilled).toBeNull();
+		expect(resolution.state.players.find((p) => p.did === 'did:plc:player7')?.alive).toBe(true);
+	});
+
+	it('both mafia and vigilante can kill different targets', () => {
+		let game = night1Game9();
+		game = submitNightAction(game, {
+			actor: 'did:plc:player0', // godfather kills player7
+			kind: 'kill',
+			target: 'did:plc:player7',
+		}).state;
+		game = submitNightAction(game, {
+			actor: 'did:plc:player5', // vigilante kills player8
+			kind: 'vigilante_kill',
+			target: 'did:plc:player8',
+		}).state;
+
+		const resolution = resolveNight(game);
+		expect(resolution.mafiaKilled).toBe('did:plc:player7');
+		expect(resolution.vigilanteKilled).toBe('did:plc:player8');
+		expect(resolution.state.players.find((p) => p.did === 'did:plc:player7')?.alive).toBe(false);
+		expect(resolution.state.players.find((p) => p.did === 'did:plc:player8')?.alive).toBe(false);
+	});
+
+	it('same target from mafia and vigilante = 1 death', () => {
+		let game = night1Game9();
+		game = submitNightAction(game, {
+			actor: 'did:plc:player0',
+			kind: 'kill',
+			target: 'did:plc:player7',
+		}).state;
+		game = submitNightAction(game, {
+			actor: 'did:plc:player5',
+			kind: 'vigilante_kill',
+			target: 'did:plc:player7',
+		}).state;
+
+		const resolution = resolveNight(game);
+		expect(resolution.mafiaKilled).toBe('did:plc:player7');
+		expect(resolution.vigilanteKilled).toBe('did:plc:player7');
+		// Only 1 death, not double-counted
+		const dead = resolution.state.players.filter((p) => !p.alive);
+		expect(dead).toHaveLength(1);
+	});
+
+	it('decrements vigilanteShots after shooting', () => {
+		let game = night1Game9();
+		game = submitNightAction(game, {
+			actor: 'did:plc:player5',
+			kind: 'vigilante_kill',
+			target: 'did:plc:player7',
+		}).state;
+
+		const resolution = resolveNight(game);
+		expect(resolution.state.vigilanteShots).toBe(1);
+	});
+
+	it('decrements vigilanteShots even when doctor blocks', () => {
+		let game = night1Game9();
+		game = submitNightAction(game, {
+			actor: 'did:plc:player5',
+			kind: 'vigilante_kill',
+			target: 'did:plc:player7',
+		}).state;
+		game = submitNightAction(game, {
+			actor: 'did:plc:player4',
+			kind: 'protect',
+			target: 'did:plc:player7',
+		}).state;
+
+		const resolution = resolveNight(game);
+		expect(resolution.state.vigilanteShots).toBe(1);
+	});
+
+	it('rejects vigilante_kill when 0 shots remaining', () => {
+		let game = night1Game9();
+		game = { ...game, vigilanteShots: 0 };
+		const result = submitNightAction(game, {
+			actor: 'did:plc:player5',
+			kind: 'vigilante_kill',
+			target: 'did:plc:player7',
+		});
+		expect(result.ok).toBe(false);
+		expect(result.error).toContain('no shots remaining');
 	});
 });

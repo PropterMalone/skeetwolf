@@ -601,11 +601,12 @@ export class GameManager {
 			// DM night announcement instead of public post
 			const alivePlayers = state.players.filter((p) => p.alive);
 			for (const player of alivePlayers) {
-				await this.sendGameDm(
-					state,
-					player.did,
-					`${flavor(this.flavorFor(gameId).nightStart)} Night ends in ${formatDuration(state.config.nightDurationMs)}.`,
-				);
+				let nightMsg = `${flavor(this.flavorFor(gameId).nightStart)} Night ends in ${formatDuration(state.config.nightDurationMs)}.`;
+				// Remind vigilante of remaining shots
+				if (player.role === 'vigilante' && state.vigilanteShots > 0) {
+					nightMsg += `\n\nYou have ${state.vigilanteShots} shot(s) remaining. DM "shoot @handle" to use one.`;
+				}
+				await this.sendGameDm(state, player.did, nightMsg);
 			}
 		}
 
@@ -621,17 +622,31 @@ export class GameManager {
 		const resolution = resolveNight(state);
 		state = resolution.state;
 
+		const f = this.flavorFor(gameId);
+
 		// Build dawn results text (before any API calls)
-		let dawnResults: string;
-		if (resolution.killed) {
-			const victim = state.players.find((p) => p.did === resolution.killed);
-			state = applyWinCondition(state);
+		const dawnParts: string[] = [];
+
+		if (resolution.mafiaKilled) {
+			const victim = state.players.find((p) => p.did === resolution.mafiaKilled);
 			const victimRole = (victim?.role ?? 'villager') as Role;
-			dawnResults = flavor(this.flavorFor(gameId).nightKill[victimRole], {
-				victim: victim?.handle ?? 'unknown',
-			});
+			dawnParts.push(flavor(f.nightKill[victimRole], { victim: victim?.handle ?? 'unknown' }));
+		}
+
+		if (resolution.vigilanteKilled && resolution.vigilanteKilled !== resolution.mafiaKilled) {
+			const victim = state.players.find((p) => p.did === resolution.vigilanteKilled);
+			const victimRole = (victim?.role ?? 'villager') as Role;
+			dawnParts.push(
+				flavor(f.vigilanteNightKill[victimRole], { victim: victim?.handle ?? 'unknown' }),
+			);
+		}
+
+		let dawnResults: string;
+		if (dawnParts.length > 0) {
+			state = applyWinCondition(state);
+			dawnResults = dawnParts.join('\n\n');
 		} else {
-			dawnResults = flavor(this.flavorFor(gameId).dawnPeaceful);
+			dawnResults = flavor(f.dawnPeaceful);
 		}
 
 		// Persist after game logic mutations, before any API calls
