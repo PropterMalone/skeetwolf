@@ -9,7 +9,8 @@ import type { AtpAgent } from '@atproto/api';
 
 /** Outbound DM capabilities */
 export interface DmSender {
-	sendDm(recipientDid: string, text: string): Promise<void>;
+	/** Send a DM. Returns true if delivered, false if the recipient's settings blocked it. */
+	sendDm(recipientDid: string, text: string): Promise<boolean>;
 	/** Create a relay group — bot will forward messages between members via 1:1 DMs */
 	createRelayGroup(groupId: string, memberDids: string[]): void;
 	/** Send a message to all members of a relay group */
@@ -54,12 +55,18 @@ export function createBlueskyDmSender(chatAgent: AtpAgent): DmSender {
 	}
 
 	return {
-		async sendDm(recipientDid: string, text: string): Promise<void> {
-			const convoId = await getOrCreateConvo(recipientDid);
-			await chatAgent.chat.bsky.convo.sendMessage({
-				convoId,
-				message: { text },
-			});
+		async sendDm(recipientDid: string, text: string): Promise<boolean> {
+			try {
+				const convoId = await getOrCreateConvo(recipientDid);
+				await chatAgent.chat.bsky.convo.sendMessage({
+					convoId,
+					message: { text },
+				});
+				return true;
+			} catch (err) {
+				console.error(`DM to ${recipientDid} failed:`, (err as Error).message ?? err);
+				return false;
+			}
 		},
 
 		createRelayGroup(groupId: string, memberDids: string[]): void {
@@ -74,11 +81,15 @@ export function createBlueskyDmSender(chatAgent: AtpAgent): DmSender {
 			}
 			await Promise.all(
 				members.map(async (did) => {
-					const convoId = await getOrCreateConvo(did);
-					await chatAgent.chat.bsky.convo.sendMessage({
-						convoId,
-						message: { text },
-					});
+					try {
+						const convoId = await getOrCreateConvo(did);
+						await chatAgent.chat.bsky.convo.sendMessage({
+							convoId,
+							message: { text },
+						});
+					} catch (err) {
+						console.error(`Relay DM to ${did} failed:`, (err as Error).message ?? err);
+					}
 				}),
 			);
 		},
@@ -158,6 +169,7 @@ export function createConsoleDmSender(): DmSender {
 	return {
 		async sendDm(recipientDid, text) {
 			console.log(`[DM → ${recipientDid}] ${text}`);
+			return true;
 		},
 		createRelayGroup(groupId, memberDids) {
 			relayGroups.set(groupId, memberDids);
