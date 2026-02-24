@@ -593,16 +593,22 @@ describe('GameManager.rehydrateVotes on hydrate', () => {
 							$type: 'app.bsky.feed.defs#threadViewPost',
 							post: {
 								uri: 'at://voter1/post/1',
+								indexedAt: '2026-01-01T00:01:00Z',
 								author: { did: voter1.did, handle: voter1.handle },
-								record: { text: `@skeetwolf.bsky.social vote @${target.handle}` },
+								record: {
+									text: `@skeetwolf.bsky.social vote @${target.handle}`,
+								},
 							},
 						},
 						{
 							$type: 'app.bsky.feed.defs#threadViewPost',
 							post: {
 								uri: 'at://voter2/post/2',
+								indexedAt: '2026-01-01T00:02:00Z',
 								author: { did: voter2.did, handle: voter2.handle },
-								record: { text: `@skeetwolf.bsky.social vote @${target.handle}` },
+								record: {
+									text: `@skeetwolf.bsky.social vote @${target.handle}`,
+								},
 							},
 						},
 						// Bot's own post — should be skipped
@@ -610,8 +616,19 @@ describe('GameManager.rehydrateVotes on hydrate', () => {
 							$type: 'app.bsky.feed.defs#threadViewPost',
 							post: {
 								uri: 'at://bot/post/3',
+								indexedAt: '2026-01-01T00:03:00Z',
 								author: { did: 'did:plc:bot', handle: 'skeetwolf.bsky.social' },
 								record: { text: 'Vote recorded' },
+							},
+						},
+						// Casual conversation mentioning "vote" without @bot — should be ignored
+						{
+							$type: 'app.bsky.feed.defs#threadViewPost',
+							post: {
+								uri: 'at://voter1/post/4',
+								indexedAt: '2026-01-01T00:04:00Z',
+								author: { did: voter1.did, handle: voter1.handle },
+								record: { text: 'I think we should unvote and reconsider' },
 							},
 						},
 					],

@@ -547,6 +547,7 @@ export interface ThreadReply {
 	authorDid: string;
 	authorHandle: string;
 	text: string;
+	indexedAt: string;
 }
 
 /** Fetch all replies in a thread tree (walks nested replies recursively) */
@@ -562,6 +563,7 @@ export async function getThreadReplies(agent: AtpAgent, postUri: string): Promis
 		$type?: string;
 		post?: {
 			uri?: string;
+			indexedAt?: string;
 			replyCount?: number;
 			author?: { did?: string; handle?: string };
 			record?: { text?: string };
@@ -601,6 +603,7 @@ export async function getThreadReplies(agent: AtpAgent, postUri: string): Promis
 					authorDid: r.post.author?.did ?? '',
 					authorHandle: r.post.author?.handle ?? '',
 					text: r.post.record?.text ?? '',
+					indexedAt: r.post.indexedAt ?? '',
 				});
 
 				if (Array.isArray(r.replies) && r.replies.length > 0) {
@@ -622,6 +625,8 @@ export async function getThreadReplies(agent: AtpAgent, postUri: string): Promis
 	}
 
 	await fetchAndWalk(postUri);
+	// Sort chronologically so rehydration replays commands in the right order
+	replies.sort((a, b) => (a.indexedAt < b.indexedAt ? -1 : a.indexedAt > b.indexedAt ? 1 : 0));
 	return replies;
 }
 
