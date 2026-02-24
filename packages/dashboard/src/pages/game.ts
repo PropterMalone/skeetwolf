@@ -20,7 +20,7 @@ function timeRemaining(phaseStartedAt: number, phaseDurationMs: number): string 
 }
 
 function playerRow(
-	p: { handle: string; role: string; alive: boolean; alignment: 'town' | 'mafia' },
+	p: { handle: string; role: string | null; alive: boolean; alignment: 'town' | 'mafia' | null },
 	showRoles: boolean,
 ): string {
 	const status = p.alive

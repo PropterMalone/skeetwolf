@@ -44,9 +44,9 @@ export interface GameDetail {
 	phase: { kind: string; number: number };
 	players: {
 		handle: string;
-		role: string;
+		role: string | null;
 		alive: boolean;
-		alignment: 'town' | 'mafia';
+		alignment: 'town' | 'mafia' | null;
 	}[];
 	votes: { voterHandle: string; targetHandle: string | null }[];
 	winner: string | null;
@@ -115,15 +115,16 @@ function toDetail(state: StoredGameState): GameDetail {
 	const handleByDid = new Map(state.players.map((p) => [p.did, p.handle]));
 	const phaseDurationMs =
 		state.phase.kind === 'day' ? state.config.dayDurationMs : state.config.nightDurationMs;
+	const isFinished = state.status === 'finished';
 	return {
 		id: state.id,
 		status: state.status,
 		phase: state.phase,
 		players: state.players.map((p) => ({
 			handle: p.handle,
-			role: p.role,
+			role: isFinished ? p.role : null,
 			alive: p.alive,
-			alignment: alignmentOf(p.role),
+			alignment: isFinished ? alignmentOf(p.role) : null,
 		})),
 		votes: state.votes.map((v) => ({
 			voterHandle: handleByDid.get(v.voter) ?? v.voter,
