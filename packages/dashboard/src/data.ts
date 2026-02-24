@@ -16,7 +16,7 @@ interface StoredGameState {
 		alive: boolean;
 	}[];
 	votes: { voter: string; target: string | null; timestamp: number }[];
-	winner: 'town' | 'mafia' | null;
+	winner: 'town' | 'mafia' | 'jester' | null;
 	announcementUri: string | null;
 	phaseStartedAt: number;
 	config: {
@@ -48,7 +48,7 @@ export interface GameDetail {
 		handle: string;
 		role: string | null;
 		alive: boolean;
-		alignment: 'town' | 'mafia' | null;
+		alignment: 'town' | 'mafia' | 'neutral' | null;
 	}[];
 	votes: { voterHandle: string; targetHandle: string | null }[];
 	winner: string | null;
@@ -79,6 +79,8 @@ export interface LeaderboardEntry {
 	townWins: number;
 	mafiaGames: number;
 	mafiaWins: number;
+	neutralGames: number;
+	neutralWins: number;
 }
 
 export interface DashboardData {
@@ -93,7 +95,8 @@ export interface DashboardData {
 
 const MAFIA_ROLES = new Set(['mafioso', 'godfather']);
 
-function alignmentOf(role: string): 'town' | 'mafia' {
+function alignmentOf(role: string): 'town' | 'mafia' | 'neutral' {
+	if (role === 'jester') return 'neutral';
 	return MAFIA_ROLES.has(role) ? 'mafia' : 'town';
 }
 
@@ -207,6 +210,8 @@ export function createDashboardData(dbPath: string): DashboardData {
 					townWins: number;
 					mafiaGames: number;
 					mafiaWins: number;
+					neutralGames: number;
+					neutralWins: number;
 				}
 			>();
 
@@ -220,10 +225,19 @@ export function createDashboardData(dbPath: string): DashboardData {
 						townWins: 0,
 						mafiaGames: 0,
 						mafiaWins: 0,
+						neutralGames: 0,
+						neutralWins: 0,
 					};
 					existing.gamesPlayed++;
 					const alignment = alignmentOf(player.role);
-					if (alignment === 'town') {
+					if (alignment === 'neutral') {
+						existing.neutralGames++;
+						// Jester wins only if they were the jester AND winner is 'jester'
+						if (state.winner === 'jester') {
+							existing.wins++;
+							existing.neutralWins++;
+						}
+					} else if (alignment === 'town') {
 						existing.townGames++;
 						if (state.winner === 'town') {
 							existing.wins++;

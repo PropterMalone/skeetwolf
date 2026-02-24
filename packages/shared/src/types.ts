@@ -11,11 +11,13 @@ export type GameId = string;
 
 export type TownRole = 'villager' | 'cop' | 'doctor';
 export type MafiaRole = 'mafioso' | 'godfather';
-export type Role = TownRole | MafiaRole;
-export type Alignment = 'town' | 'mafia';
+export type NeutralRole = 'jester';
+export type Role = TownRole | MafiaRole | NeutralRole;
+export type Alignment = 'town' | 'mafia' | 'neutral';
 
 export function alignmentOf(role: Role): Alignment {
-	const mafiaRoles: Set<Role> = new Set(['mafioso', 'godfather']);
+	if (role === 'jester') return 'neutral';
+	const mafiaRoles: Set<string> = new Set(['mafioso', 'godfather']);
 	return mafiaRoles.has(role) ? 'mafia' : 'town';
 }
 
@@ -59,7 +61,7 @@ export interface NightAction {
 
 export type GameStatus = 'signup' | 'active' | 'finished';
 
-export type WinCondition = 'town' | 'mafia' | null;
+export type WinCondition = 'town' | 'mafia' | 'jester' | null;
 
 export interface GameConfig {
 	/** Minimum players to start */
