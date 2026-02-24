@@ -74,13 +74,18 @@ async function main() {
 	// even if updateSeenNotifications races or fails
 	const processedMentionUris = new Set<string>();
 
+	let pollCount = 0;
+
 	async function poll() {
+		let hadError = false;
+		pollCount++;
+
+		// --- Mentions (independent of DMs) ---
 		try {
 			const { notifications } = await pollMentions(agent);
 
 			const botDid = agent.session?.did;
 			for (const mention of notifications) {
-				// Never process the bot's own posts
 				if (botDid && mention.authorDid === botDid) continue;
 				if (processedMentionUris.has(mention.uri)) {
 					console.log(`Skipping already-processed mention: ${mention.uri}`);
@@ -103,27 +108,8 @@ async function main() {
 				const toDelete = [...processedMentionUris].slice(0, 500);
 				for (const uri of toDelete) processedMentionUris.delete(uri);
 			}
-
-			if (chatAgent) {
-				const { messages, latestMessageId } = await pollInboundDms(chatAgent, dmMessageId);
-
-				for (const msg of messages) {
-					await handleDm(manager, dm, msg.senderDid, msg.text);
-				}
-
-				// Save DM cursor AFTER processing
-				if (latestMessageId) {
-					dmMessageId = latestMessageId;
-					saveBotState(db, 'dm_message_id', latestMessageId);
-				}
-			}
-
-			await manager.tick(Date.now());
-
-			// Reset backoff on success
-			backoffMs = POLL_INTERVAL_MS;
 		} catch (err) {
-			// Session refresh on auth errors
+			hadError = true;
 			if (isAuthError(err)) {
 				console.log('Auth error detected, refreshing session...');
 				try {
@@ -133,10 +119,48 @@ async function main() {
 					console.error('Session refresh failed:', loginErr);
 				}
 			}
+			console.error('Mention poll error:', err);
+		}
 
-			console.error('Poll error:', err);
+		// --- DMs (independent of mentions) ---
+		if (chatAgent) {
+			try {
+				const { messages, latestMessageId } = await pollInboundDms(chatAgent, dmMessageId);
+
+				for (const msg of messages) {
+					await handleDm(manager, dm, msg.senderDid, msg.text);
+				}
+
+				if (latestMessageId) {
+					dmMessageId = latestMessageId;
+					saveBotState(db, 'dm_message_id', latestMessageId);
+				}
+			} catch (err) {
+				hadError = true;
+				console.error('DM poll error:', err);
+			}
+		}
+
+		// --- Tick (always runs — phase timers must not stall) ---
+		try {
+			await manager.tick(Date.now());
+		} catch (err) {
+			hadError = true;
+			console.error('Tick error:', err);
+		}
+
+		// Backoff only on errors, reset immediately on clean poll
+		if (hadError) {
 			backoffMs = Math.min(backoffMs * 2, MAX_BACKOFF_MS);
 			console.log(`Backing off: next poll in ${backoffMs / 1000}s`);
+		} else {
+			backoffMs = POLL_INTERVAL_MS;
+		}
+
+		// Heartbeat every 10 polls (~5 min at normal cadence)
+		if (pollCount % 10 === 0) {
+			const games = manager.activeGameCount();
+			console.log(`[heartbeat] poll #${pollCount}, ${games} active game(s)`);
 		}
 
 		setTimeout(poll, backoffMs);
@@ -242,7 +266,11 @@ async function handleMention(
 				);
 				break;
 			}
-			const { error } = await manager.voteAndCheckMajority(voteGameId, authorDid, targetDid);
+			const { error, majorityReached } = await manager.voteAndCheckMajority(
+				voteGameId,
+				authorDid,
+				targetDid,
+			);
 			if (error) {
 				console.log(`Vote failed: ${error}`);
 				await manager.reply(voteGameId, error, postUri, postCid);
@@ -250,6 +278,9 @@ async function handleMention(
 				const targetHandle = cmd.targetHandle;
 				console.log(`${authorHandle} voted for @${targetHandle} in game ${voteGameId}`);
 				manager.recordPlayerPost(voteGameId, postUri, authorDid);
+				if (!majorityReached) {
+					await manager.postVoteCount(voteGameId);
+				}
 			}
 			break;
 		}

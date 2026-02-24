@@ -46,15 +46,17 @@ import type { LabelerServer } from '@skyware/labeler';
 import type Database from 'better-sqlite3';
 import {
 	type DmSender,
+	type PostRef,
 	type ThreadReply,
 	createPostgate,
 	createThreadgate,
 	deletePostgate,
 	deleteThreadgate,
 	getThreadReplies,
-	postMessage,
-	postWithQuote,
+	postMessageChain,
+	postWithQuoteChain,
 	replyToPost,
+	replyToPostChain,
 	resolveHandle,
 } from './bot.js';
 import { parseMention } from './command-parser.js';
@@ -134,6 +136,11 @@ export class GameManager {
 		private dm: DmSender,
 		private labeler: LabelerServer | null = null,
 	) {}
+
+	/** Number of active games in memory */
+	activeGameCount(): number {
+		return this.games.size;
+	}
 
 	/** Get a game's current state (or null if not loaded) */
 	getGame(gameId: GameId): GameState | null {
@@ -617,7 +624,7 @@ export class GameManager {
 				.filter((p) => p.alive)
 				.map((p) => `@${p.handle}`)
 				.join(' ');
-			const text = `🐺 Skeetwolf Game #${gameId} — Day ${dayNumber}\n\nDawn breaks. ${dawnResults}\n\nPlayers alive: ${playerList}`;
+			const text = `🐺 Skeetwolf Game #${gameId} — Day ${dayNumber}\n\nPlayers alive: ${playerList}\n\nDawn breaks. ${dawnResults}`;
 			const previousDayUri = state.dayThreadUri;
 			const previousDayCid = state.dayThreadCid;
 			try {
@@ -647,7 +654,7 @@ export class GameManager {
 				.map((p) => `@${p.handle}`)
 				.join(' ');
 
-			let text = `🐺 Skeetwolf Game #${gameId} — Day ${dayNumber}!\n\nDawn breaks. ${dawnResults}\n\nPlayers alive: ${playerList}\nDiscuss and vote! Day ends in ${formatDuration(state.config.dayDurationMs)}.`;
+			let text = `🐺 Skeetwolf Game #${gameId} — Day ${dayNumber}!\n\nPlayers alive: ${playerList}\n\nDawn breaks. ${dawnResults}\n\nDiscuss and vote! Day ends in ${formatDuration(state.config.dayDurationMs)}.`;
 
 			// Day 1: include feed URL so players can follow the game
 			if (dayNumber === 1) {
@@ -1012,7 +1019,8 @@ export class GameManager {
 		}
 	}
 
-	/** Post a day thread — top-level for Day 1, QT of previous day for Day 2+ */
+	/** Post a day thread — top-level for Day 1, QT of previous day for Day 2+.
+	 *  Auto-splits long text into a chain and records all posts. */
 	private async postDayThread(
 		state: GameState,
 		text: string,
@@ -1020,8 +1028,7 @@ export class GameManager {
 		previousDayCid?: string,
 	): Promise<{ uri: string; cid: string }> {
 		const labels = POST_KIND_LABELS.day_thread;
-		let uri: string;
-		let cid: string;
+		let refs: [PostRef, ...PostRef[]];
 
 		if (previousDayUri && previousDayCid) {
 			// QT the previous day: delete postgate → QT → re-create postgate
@@ -1030,9 +1037,7 @@ export class GameManager {
 			} catch {
 				// Postgate might not exist (e.g., first run after upgrade)
 			}
-			const result = await postWithQuote(this.agent, text, previousDayUri, previousDayCid, labels);
-			uri = result.uri;
-			cid = result.cid;
+			refs = await postWithQuoteChain(this.agent, text, previousDayUri, previousDayCid, labels);
 			try {
 				await createPostgate(this.agent, previousDayUri);
 			} catch (err) {
@@ -1040,68 +1045,63 @@ export class GameManager {
 			}
 		} else {
 			// Day 1: top-level post
-			const result = await postMessage(this.agent, text, labels);
-			uri = result.uri;
-			cid = result.cid;
+			refs = await postMessageChain(this.agent, text, labels);
 		}
 
-		// Postgate on the new day post (disable QTs)
-		try {
-			await createPostgate(this.agent, uri);
-		} catch (err) {
-			console.error(`Failed to create postgate for day thread ${uri}:`, err);
-		}
-
-		// Threadgate shelved: risk of locking players out while player base is small.
-		// createDayThreadgate code exists in bot.ts — re-enable when we have more games under our belt.
-
-		// Label via external labeler
-		if (this.labeler) {
-			await labelPost(this.labeler, uri, 'skeetwolf-game');
-		}
-
-		// Record in game_posts
+		// Postgate, label, and record every post in the chain
 		const botDid = this.agent.session?.did ?? 'unknown';
 		const phase = `${state.phase.kind}-${state.phase.number}`;
-		recordGamePost(this.db, {
-			uri,
-			gameId: state.id,
-			authorDid: botDid,
-			kind: 'day_thread',
-			phase,
-		});
+		for (const ref of refs) {
+			try {
+				await createPostgate(this.agent, ref.uri);
+			} catch (err) {
+				console.error(`Failed to create postgate for day thread ${ref.uri}:`, err);
+			}
+			if (this.labeler) {
+				await labelPost(this.labeler, ref.uri, 'skeetwolf-game');
+			}
+			recordGamePost(this.db, {
+				uri: ref.uri,
+				gameId: state.id,
+				authorDid: botDid,
+				kind: 'day_thread',
+				phase,
+			});
+		}
 
-		return { uri, cid };
+		const [first] = refs;
+		return first;
 	}
 
-	/** Post a top-level message, add postgate, label, and record in game_posts */
+	/** Post a top-level message, add postgate, label, and record in game_posts.
+	 *  Auto-splits long text into a chain and records all posts. */
 	private async post(
 		gameId: GameId,
 		text: string,
 		kind: PostKind,
 	): Promise<{ uri: string; cid: string }> {
-		const { uri, cid } = await postMessage(this.agent, text, POST_KIND_LABELS[kind]);
-
-		// Postgate on all bot posts (disable QTs)
-		try {
-			await createPostgate(this.agent, uri);
-		} catch (err) {
-			console.error(`Failed to create postgate for ${uri}:`, err);
-		}
-
-		// Label via external labeler
-		if (this.labeler) {
-			await labelPost(this.labeler, uri, 'skeetwolf-game');
-		}
+		const [first, ...rest] = await postMessageChain(this.agent, text, POST_KIND_LABELS[kind]);
 
 		const botDid = this.agent.session?.did ?? 'unknown';
 		const state = this.games.get(gameId);
 		const phase = state ? `${state.phase.kind}-${state.phase.number}` : null;
-		recordGamePost(this.db, { uri, gameId, authorDid: botDid, kind, phase });
-		return { uri, cid };
+		for (const ref of [first, ...rest]) {
+			try {
+				await createPostgate(this.agent, ref.uri);
+			} catch (err) {
+				console.error(`Failed to create postgate for ${ref.uri}:`, err);
+			}
+			if (this.labeler) {
+				await labelPost(this.labeler, ref.uri, 'skeetwolf-game');
+			}
+			recordGamePost(this.db, { uri: ref.uri, gameId, authorDid: botDid, kind, phase });
+		}
+
+		return first;
 	}
 
-	/** Post a reply in the current day thread. Falls back to standalone reply if no thread. */
+	/** Post a reply in the current day thread. Falls back to standalone reply if no thread.
+	 *  Auto-splits long text into a chain and records all posts. */
 	private async postInThread(
 		state: GameState,
 		text: string,
@@ -1114,7 +1114,7 @@ export class GameManager {
 			return this.post(state.id, text, kind);
 		}
 
-		const { uri, cid } = await replyToPost(
+		const [first, ...rest] = await replyToPostChain(
 			this.agent,
 			text,
 			rootUri,
@@ -1124,22 +1124,22 @@ export class GameManager {
 			POST_KIND_LABELS[kind],
 		);
 
-		// Postgate on replies too
-		try {
-			await createPostgate(this.agent, uri);
-		} catch (err) {
-			console.error(`Failed to create postgate for reply ${uri}:`, err);
-		}
-
-		// Label via external labeler
-		if (this.labeler) {
-			await labelPost(this.labeler, uri, 'skeetwolf-game');
-		}
-
+		// Postgate, label, and record every post in the chain
 		const botDid = this.agent.session?.did ?? 'unknown';
 		const phase = `${state.phase.kind}-${state.phase.number}`;
-		recordGamePost(this.db, { uri, gameId: state.id, authorDid: botDid, kind, phase });
-		return { uri, cid };
+		for (const ref of [first, ...rest]) {
+			try {
+				await createPostgate(this.agent, ref.uri);
+			} catch (err) {
+				console.error(`Failed to create postgate for reply ${ref.uri}:`, err);
+			}
+			if (this.labeler) {
+				await labelPost(this.labeler, ref.uri, 'skeetwolf-game');
+			}
+			recordGamePost(this.db, { uri: ref.uri, gameId: state.id, authorDid: botDid, kind, phase });
+		}
+
+		return first;
 	}
 
 	/** Reply to a mention — threads under day thread (root) with mention as parent.

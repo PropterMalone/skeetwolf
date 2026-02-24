@@ -160,10 +160,10 @@ describe('parseDm', () => {
 		});
 	});
 
-	it('parses "kill handle" without @', () => {
+	it('requires @ prefix — "kill handle" without @ is mafia chat', () => {
 		expect(parseDm('kill alice.bsky.social')).toEqual({
-			kind: 'kill',
-			targetHandle: 'alice.bsky.social',
+			kind: 'mafia_chat',
+			text: 'kill alice.bsky.social',
 		});
 	});
 
@@ -207,5 +207,46 @@ describe('parseDm', () => {
 			kind: 'kill',
 			targetHandle: 'alice.bsky.social',
 		});
+	});
+
+	// Natural language false-positive regression tests
+	it('treats "kill anyone" as mafia chat (no @ prefix)', () => {
+		expect(parseDm("we don't get to kill anyone")).toEqual({
+			kind: 'mafia_chat',
+			text: "we don't get to kill anyone",
+		});
+	});
+
+	it('treats "check this out" as mafia chat', () => {
+		expect(parseDm('check this out')).toEqual({ kind: 'mafia_chat', text: 'check this out' });
+	});
+
+	it('treats "save the date" as mafia chat', () => {
+		expect(parseDm('save the date')).toEqual({ kind: 'mafia_chat', text: 'save the date' });
+	});
+
+	it('treats "check our options" as mafia chat', () => {
+		expect(parseDm('check our options')).toEqual({
+			kind: 'mafia_chat',
+			text: 'check our options',
+		});
+	});
+
+	it('treats "protect ourselves" as mafia chat', () => {
+		expect(parseDm('we need to protect ourselves')).toEqual({
+			kind: 'mafia_chat',
+			text: 'we need to protect ourselves',
+		});
+	});
+
+	it('treats "investigate further" as mafia chat', () => {
+		expect(parseDm('lets investigate further')).toEqual({
+			kind: 'mafia_chat',
+			text: 'lets investigate further',
+		});
+	});
+
+	it('treats "kill time" as mafia chat', () => {
+		expect(parseDm('kill time')).toEqual({ kind: 'mafia_chat', text: 'kill time' });
 	});
 });

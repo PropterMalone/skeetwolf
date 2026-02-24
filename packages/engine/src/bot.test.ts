@@ -7,6 +7,7 @@ import {
 	deleteThreadgate,
 	extractRkey,
 	postWithQuote,
+	splitForPost,
 	truncateToLimit,
 } from './bot.js';
 
@@ -45,6 +46,105 @@ describe('truncateToLimit', () => {
 		const result = truncateToLimit(flags, 100);
 		const segments = [...new Intl.Segmenter('en', { granularity: 'grapheme' }).segment(result)];
 		expect(segments.length).toBe(100);
+	});
+});
+
+describe('splitForPost', () => {
+	it('returns single chunk for short text', () => {
+		expect(splitForPost('hello world')).toEqual(['hello world']);
+	});
+
+	it('returns single chunk for exactly 300 graphemes', () => {
+		const text = 'a'.repeat(300);
+		expect(splitForPost(text)).toEqual([text]);
+	});
+
+	it('splits on paragraph boundaries', () => {
+		const p1 = 'a'.repeat(200);
+		const p2 = 'b'.repeat(200);
+		const text = `${p1}\n\n${p2}`;
+		const chunks = splitForPost(text);
+		expect(chunks).toHaveLength(2);
+		expect(chunks[0]).toBe(p1);
+		expect(chunks[1]).toBe(p2);
+	});
+
+	it('splits on line boundaries when paragraph exceeds limit', () => {
+		const l1 = 'a'.repeat(200);
+		const l2 = 'b'.repeat(200);
+		const text = `${l1}\n${l2}`;
+		const chunks = splitForPost(text);
+		expect(chunks).toHaveLength(2);
+		expect(chunks[0]).toBe(l1);
+		expect(chunks[1]).toBe(l2);
+	});
+
+	it('splits on space boundaries for long lines', () => {
+		const words = Array.from({ length: 60 }, (_, i) => `word${i}`);
+		const text = words.join(' ');
+		const chunks = splitForPost(text);
+		expect(chunks.length).toBeGreaterThan(1);
+		for (const chunk of chunks) {
+			const segmenter = new Intl.Segmenter('en', { granularity: 'grapheme' });
+			const len = [...segmenter.segment(chunk)].length;
+			expect(len).toBeLessThanOrEqual(300);
+		}
+	});
+
+	it('never splits inside an @mention', () => {
+		// Build text where a mention straddles the 300 boundary
+		const padding = 'x '.repeat(145); // ~290 chars
+		const text = `${padding}@verylonghandle.bsky.social more text after`;
+		const chunks = splitForPost(text);
+		// The mention should appear intact in one chunk
+		const mentionChunk = chunks.find((c) => c.includes('@verylonghandle.bsky.social'));
+		expect(mentionChunk).toBeDefined();
+		expect(mentionChunk).toContain('@verylonghandle.bsky.social');
+	});
+
+	it('handles emoji/multi-byte graphemes', () => {
+		const emoji = '🐺'.repeat(200); // 200 graphemes, way over 300 bytes but only 200 graphemes
+		const chunks = splitForPost(emoji);
+		expect(chunks).toHaveLength(1); // 200 < 300
+	});
+
+	it('splits text with emoji correctly at grapheme boundary', () => {
+		const emoji = '🐺'.repeat(301);
+		const chunks = splitForPost(emoji);
+		expect(chunks.length).toBeGreaterThan(1);
+		for (const chunk of chunks) {
+			const segmenter = new Intl.Segmenter('en', { granularity: 'grapheme' });
+			expect([...segmenter.segment(chunk)].length).toBeLessThanOrEqual(300);
+		}
+	});
+
+	it('packs paragraphs greedily when they fit', () => {
+		const text = 'Short para 1\n\nShort para 2\n\nShort para 3';
+		const chunks = splitForPost(text);
+		expect(chunks).toHaveLength(1);
+		expect(chunks[0]).toBe(text);
+	});
+
+	it('handles a realistic day announcement with 7 players', () => {
+		const players = [
+			'@citizenkryptik.bsky.social',
+			'@woodardj.bsky.social',
+			'@alice.bsky.social',
+			'@bob.bsky.social',
+			'@charlie.bsky.social',
+			'@diana.bsky.social',
+			'@eve.bsky.social',
+		];
+		const text = `🐺 Skeetwolf Game #abc123 — Day 1!\n\nPlayers alive: ${players.join(' ')}\n\nDawn breaks. The village stirs awake.\n\nDiscuss and vote! Day ends in 12h.\n\n📡 Follow this game: https://bsky.app/profile/did:plc:abc/feed/skeetwolf-abc123`;
+		const chunks = splitForPost(text);
+		// All @mentions should be in chunk 1 (notifications requirement)
+		for (const player of players) {
+			expect(chunks[0]).toContain(player);
+		}
+		for (const chunk of chunks) {
+			const segmenter = new Intl.Segmenter('en', { granularity: 'grapheme' });
+			expect([...segmenter.segment(chunk)].length).toBeLessThanOrEqual(300);
+		}
 	});
 });
 
