@@ -346,8 +346,10 @@ export function resolveNight(state: GameState): NightResolution {
 	if (investigateAction) {
 		const target = state.players.find((p) => p.did === investigateAction.target);
 		if (target) {
-			const result =
-				target.role === 'godfather' || target.role === 'jester' ? 'town' : alignmentOf(target.role);
+			const result: 'town' | 'mafia' =
+				target.role === 'godfather' || target.role === 'jester'
+					? 'town'
+					: (alignmentOf(target.role) as 'town' | 'mafia');
 			investigated = { cop: investigateAction.actor, target: investigateAction.target, result };
 		}
 	}
