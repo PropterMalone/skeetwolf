@@ -249,14 +249,16 @@ export class GameManager {
 
 		const game = result.state;
 		this.persist(game);
-		await this.announceGameStart(game);
+		const failed = await this.announceGameStart(game);
+		await this.warnDmFailures(failed, game);
 
 		return null;
 	}
 
-	/** DM roles and set up mafia relay. No public Night 0 post — first public post is Day 1. */
-	private async announceGameStart(game: GameState): Promise<void> {
+	/** DM roles and set up mafia relay. No public Night 0 post — first public post is Day 1. Returns handles that failed to receive DMs. */
+	private async announceGameStart(game: GameState): Promise<string[]> {
 		const gameId = game.id;
+		const failedHandles: string[] = [];
 
 		// DM roles to all players
 		const f = DEFAULT_FLAVOR;
@@ -283,7 +285,8 @@ export class GameManager {
 				message += `\n\nHow to play: ${faqUrl}`;
 			}
 
-			await this.dm.sendDm(player.did, message);
+			const ok = await this.dm.sendDm(player.did, message);
+			if (!ok) failedHandles.push(player.handle);
 		}
 
 		// Set up mafia relay group (bot-relayed 1:1 DMs since Bluesky lacks group DMs)
@@ -304,6 +307,31 @@ export class GameManager {
 		// DM all players Night 0 guidance (role-specific, no public post)
 		for (const player of game.players) {
 			await this.dm.sendDm(player.did, flavor(f.night0Guidance[player.role as Role]));
+		}
+
+		return failedHandles;
+	}
+
+	/** Post a public warning about players whose DM settings blocked delivery */
+	private async warnDmFailures(
+		failedHandles: string[],
+		game: GameState,
+		replyUri?: string,
+		replyCid?: string,
+	): Promise<void> {
+		if (failedHandles.length === 0) return;
+		const handles = failedHandles.map((h) => `@${h}`).join(', ');
+		const text = `⚠️ Couldn't DM ${handles} — either open your Bluesky chat settings or follow @skeetwolf.bsky.social, then rejoin the queue.`;
+		try {
+			if (replyUri && replyCid) {
+				await this.replyNoGame(text, replyUri, replyCid);
+			} else if (game.announcementUri) {
+				await this.postInThread(game, text, 'player');
+			} else {
+				console.error(`DM failures for game ${game.id} but nowhere to post warning: ${handles}`);
+			}
+		} catch (err) {
+			console.error(`Failed to post DM warning for game ${game.id}:`, err);
 		}
 	}
 
@@ -1011,7 +1039,8 @@ export class GameManager {
 			);
 		}
 
-		await this.announceGameStart(state);
+		const failed = await this.announceGameStart(state);
+		await this.warnDmFailures(failed, state, triggerUri, triggerCid);
 	}
 
 	// -- Invite Games --
@@ -1217,7 +1246,8 @@ export class GameManager {
 			);
 		}
 
-		await this.announceGameStart(state);
+		const failed = await this.announceGameStart(state);
+		await this.warnDmFailures(failed, state, triggerUri, triggerCid);
 
 		// Mark invite as active and remove from tracking
 		const activatedInvite = { ...invite, status: 'active' as const };
