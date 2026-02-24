@@ -265,6 +265,13 @@ export class GameManager {
 		if (rehydrated > 0) {
 			this.persist(state);
 			console.log(`Rehydrated ${rehydrated} vote(s) for game ${gameId} from thread`);
+
+			// Check if rehydrated votes form a majority — trigger endDay if so
+			const { target } = tallyVotes(state);
+			if (target) {
+				console.log(`Majority detected after rehydration for game ${gameId} — ending day`);
+				await this.endDay(gameId);
+			}
 		}
 	}
 
