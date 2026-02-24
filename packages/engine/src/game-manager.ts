@@ -757,8 +757,16 @@ export class GameManager {
 		const aliveCount = state.players.filter((p) => p.alive).length;
 		const majority = Math.floor(aliveCount / 2) + 1;
 
+		const remaining = state.phaseStartedAt + state.config.dayDurationMs - Date.now();
+		const timeLeft =
+			remaining <= 0
+				? 'ending soon'
+				: remaining >= 3_600_000
+					? `${Math.floor(remaining / 3_600_000)}h ${Math.floor((remaining % 3_600_000) / 60_000)}m left`
+					: `${Math.floor(remaining / 60_000)}m left`;
+
 		if (counts.size === 0) {
-			return `📊 Day ${state.phase.number} vote count — no votes yet (${majority} needed for majority)`;
+			return `📊 Day ${state.phase.number} — no votes yet (${majority} needed) ⏳ ${timeLeft}`;
 		}
 
 		const sorted = [...counts.entries()].sort((a, b) => b[1] - a[1]);
@@ -766,7 +774,7 @@ export class GameManager {
 			const p = state.players.find((pl) => pl.did === did);
 			return `@${p?.handle ?? did}: ${n}`;
 		});
-		return `📊 Day ${state.phase.number} vote count — ${lines.join(', ')} (${majority} needed for majority)`;
+		return `📊 Day ${state.phase.number} — ${lines.join(', ')} (${majority} needed) ⏳ ${timeLeft}`;
 	}
 
 	/** Post the current vote count in the day thread */

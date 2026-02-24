@@ -444,7 +444,7 @@ describe('GameManager.formatVoteCount', () => {
 		const { manager } = await setupDayPhaseGame();
 		const text = manager.formatVoteCount('g1');
 		expect(text).toContain('no votes yet');
-		expect(text).toContain('needed for majority');
+		expect(text).toContain('needed');
 	});
 
 	it('returns vote count with votes sorted by count', async () => {
@@ -548,7 +548,7 @@ describe('GameManager hourly vote count via tick', () => {
 		await manager.tick(game.phaseStartedAt + 61 * 60 * 1000);
 		expect(mockAgent.post.mock.calls.length).toBe(postsBefore + 1);
 		const lastPost = mockAgent.post.mock.calls.at(-1)?.[0];
-		expect(lastPost.text).toContain('vote count');
+		expect(lastPost.text).toContain('Day 1');
 
 		// Tick again at 61 min — no duplicate
 		await manager.tick(game.phaseStartedAt + 61 * 60 * 1000);
