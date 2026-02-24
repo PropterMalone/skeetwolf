@@ -177,8 +177,9 @@ export class GameManager {
 
 		// Rebuild DM retry state for games with undelivered role DMs
 		for (const game of active) {
-			if (game.pendingDmDids.length > 0 && game.phase.kind === 'night' && game.phase.number === 0) {
-				const failures: PendingDmFailure[] = game.pendingDmDids
+			const pendingDids = game.pendingDmDids ?? [];
+			if (pendingDids.length > 0 && game.phase.kind === 'night' && game.phase.number === 0) {
+				const failures: PendingDmFailure[] = pendingDids
 					.map((did) => {
 						const player = game.players.find((p) => p.did === did);
 						if (!player) return null;
