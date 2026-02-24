@@ -231,11 +231,17 @@ export class GameManager {
 		let state = this.games.get(gameId);
 		if (!state) return;
 
-		let rehydrated = 0;
-		for (const reply of replies) {
-			// Skip bot's own posts
-			if (reply.authorDid === botDid) continue;
+		// Only process replies that actually mention the bot — casual conversation
+		// containing "vote" or "unvote" must not be treated as game commands
+		const botMentionPattern = botHandle ? `@${botHandle}` : null;
+		const commandReplies = replies.filter((r) => {
+			if (r.authorDid === botDid) return false;
+			if (!botMentionPattern) return false;
+			return r.text.includes(botMentionPattern);
+		});
 
+		let rehydrated = 0;
+		for (const reply of commandReplies) {
 			const cmd = parseMention(reply.text, botHandle);
 			if (cmd.kind === 'vote') {
 				const targetDid = this.resolveHandleInGame(gameId, cmd.targetHandle);
