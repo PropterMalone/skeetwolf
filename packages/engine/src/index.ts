@@ -418,17 +418,19 @@ async function handleDm(
 	switch (cmd.kind) {
 		case 'kill':
 		case 'investigate':
-		case 'protect': {
+		case 'protect':
+		case 'shoot': {
 			const game = manager.findGameForPlayer(senderDid);
 			if (!game) {
 				console.log(`Night action from ${senderDid} but not in any active game`);
 				await dm.sendDm(senderDid, 'You are not in any active game.');
 				break;
 			}
+			const actionKind = cmd.kind === 'shoot' ? 'vigilante_kill' : cmd.kind;
 			const error = await manager.nightActionByHandle(
 				game.id,
 				senderDid,
-				cmd.kind,
+				actionKind,
 				cmd.targetHandle,
 			);
 			if (error) {

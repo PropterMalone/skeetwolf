@@ -283,4 +283,25 @@ describe('parseDm', () => {
 	it('treats "kill time" as mafia chat', () => {
 		expect(parseDm('kill time')).toEqual({ kind: 'mafia_chat', text: 'kill time' });
 	});
+
+	it('parses "shoot @handle"', () => {
+		expect(parseDm('shoot @alice.bsky.social')).toEqual({
+			kind: 'shoot',
+			targetHandle: 'alice.bsky.social',
+		});
+	});
+
+	it('treats "shoot the moon" as mafia chat (no @ prefix)', () => {
+		expect(parseDm('shoot the moon')).toEqual({
+			kind: 'mafia_chat',
+			text: 'shoot the moon',
+		});
+	});
+
+	it('parses "shoot @handle" case-insensitively', () => {
+		expect(parseDm('SHOOT @bob.bsky.social')).toEqual({
+			kind: 'shoot',
+			targetHandle: 'bob.bsky.social',
+		});
+	});
 });

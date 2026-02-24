@@ -9,7 +9,7 @@ export type GameId = string;
 
 // -- Roles --
 
-export type TownRole = 'villager' | 'cop' | 'doctor';
+export type TownRole = 'villager' | 'cop' | 'doctor' | 'vigilante';
 export type MafiaRole = 'mafioso' | 'godfather';
 export type NeutralRole = 'jester';
 export type Role = TownRole | MafiaRole | NeutralRole;
@@ -49,7 +49,7 @@ export interface Vote {
 
 // -- Night Actions --
 
-export type NightActionKind = 'kill' | 'investigate' | 'protect';
+export type NightActionKind = 'kill' | 'investigate' | 'protect' | 'vigilante_kill';
 
 export interface NightAction {
 	actor: Did;
@@ -187,4 +187,6 @@ export interface GameState {
 	pendingDmDids: Did[];
 	/** Name of the flavor pack used for this game's text. */
 	flavorPackName: string;
+	/** Remaining vigilante shots (0 if no vigilante in game) */
+	vigilanteShots: number;
 }

@@ -25,6 +25,7 @@ export type DmCommand =
 	| { kind: 'kill'; targetHandle: string }
 	| { kind: 'investigate'; targetHandle: string }
 	| { kind: 'protect'; targetHandle: string }
+	| { kind: 'shoot'; targetHandle: string }
 	| { kind: 'mafia_chat'; text: string }
 	| { kind: 'unknown'; text: string };
 
@@ -146,6 +147,11 @@ export function parseDm(rawText: string): DmCommand {
 	const protectMatch = text.match(/(?:protect|save)\s+@([\w.:-]+)/i);
 	if (protectMatch?.[1]) {
 		return { kind: 'protect', targetHandle: protectMatch[1] };
+	}
+
+	const shootMatch = text.match(/shoot\s+@([\w.:-]+)/i);
+	if (shootMatch?.[1]) {
+		return { kind: 'shoot', targetHandle: shootMatch[1] };
 	}
 
 	// If it doesn't match a command, treat as mafia chat
