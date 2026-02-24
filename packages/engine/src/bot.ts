@@ -34,7 +34,10 @@ function graphemeLength(text: string): number {
  *   3. If a line exceeds limit, split on space boundaries
  *   4. Never split inside an @mention (@+non-whitespace is atomic)
  */
-export function splitForPost(text: string, limit = BLUESKY_MAX_GRAPHEMES): string[] {
+export function splitForPost(
+	text: string,
+	limit = BLUESKY_MAX_GRAPHEMES,
+): [string, ...string[]] {
 	if (graphemeLength(text) <= limit) return [text];
 
 	const paragraphs = text.split('\n\n');
@@ -65,7 +68,8 @@ export function splitForPost(text: string, limit = BLUESKY_MAX_GRAPHEMES): strin
 	}
 	if (current) chunks.push(current);
 
-	return chunks;
+	// Always at least one chunk — input text is non-empty (passed grapheme length check above)
+	return chunks as [string, ...string[]];
 }
 
 /** Split a single paragraph (no \n\n) into chunks, splitting on \n then space */
