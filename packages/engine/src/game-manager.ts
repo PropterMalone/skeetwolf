@@ -5,8 +5,8 @@
 import type { AtpAgent } from '@atproto/api';
 import {
 	DEFAULT_CONFIG,
-	DEFAULT_FLAVOR,
 	type Did,
+	type FlavorPack,
 	type GameId,
 	type GameState,
 	type Handle,
@@ -32,10 +32,12 @@ import {
 	eliminatePlayer,
 	flavor,
 	formatDuration,
+	getFlavorPack,
 	inviteGameToPlayers,
 	isInviteReady,
 	isPhaseExpired,
 	popQueue,
+	randomFlavorPackName,
 	removeFromQueue,
 	replacePlayer,
 	resolveNight,
@@ -145,6 +147,12 @@ export class GameManager {
 	/** Get a game's current state (or null if not loaded) */
 	getGame(gameId: GameId): GameState | null {
 		return this.games.get(gameId) ?? null;
+	}
+
+	/** Get the flavor pack for a game (falls back to default for pre-existing games) */
+	private flavorFor(gameId: GameId): FlavorPack {
+		const state = this.games.get(gameId);
+		return getFlavorPack(state?.flavorPackName ?? '');
 	}
 
 	/** Load all active games, queue, and invites from the database into memory */
@@ -277,7 +285,7 @@ export class GameManager {
 
 	/** Create a new game and announce it (manual flow — signup post, not day thread) */
 	async newGame(id: GameId): Promise<GameState> {
-		const state = createGame(id);
+		const state = createGame(id, {}, randomFlavorPackName());
 		this.persist(state);
 
 		const { uri, cid } = await this.post(
@@ -336,7 +344,7 @@ export class GameManager {
 			? game.players.filter((p) => targetDids.includes(p.did))
 			: game.players;
 
-		const f = DEFAULT_FLAVOR;
+		const f = this.flavorFor(gameId);
 		for (const player of recipients) {
 			const alignment = alignmentOf(player.role);
 			const teammates =
@@ -376,7 +384,7 @@ export class GameManager {
 	/** Send mafia relay + Night 0 guidance. Called after all role DMs are confirmed delivered. */
 	private async completeGameStart(game: GameState): Promise<void> {
 		const gameId = game.id;
-		const f = DEFAULT_FLAVOR;
+		const f = this.flavorFor(gameId);
 
 		// Set up mafia relay group (bot-relayed 1:1 DMs since Bluesky lacks group DMs)
 		const mafiaPlayers = game.players.filter((p) => alignmentOf(p.role) === 'mafia');
@@ -528,7 +536,7 @@ export class GameManager {
 			this.persist(state);
 
 			const victimRole = (eliminated?.role ?? 'villager') as Role;
-			const elimText = flavor(DEFAULT_FLAVOR.dayElimination[victimRole], {
+			const elimText = flavor(this.flavorFor(gameId).dayElimination[victimRole], {
 				victim: eliminated?.handle ?? 'unknown',
 				votes: countStr,
 			});
@@ -542,7 +550,7 @@ export class GameManager {
 				console.error(`Failed to post day results for game ${gameId}:`, err);
 			}
 		} else {
-			const noMajText = flavor(DEFAULT_FLAVOR.dayNoMajority, { votes: countStr });
+			const noMajText = flavor(this.flavorFor(gameId).dayNoMajority, { votes: countStr });
 			try {
 				await this.postInThread(
 					state,
@@ -585,7 +593,7 @@ export class GameManager {
 				await this.sendGameDm(
 					state,
 					player.did,
-					`${flavor(DEFAULT_FLAVOR.nightStart)} Night ends in ${formatDuration(state.config.nightDurationMs)}.`,
+					`${flavor(this.flavorFor(gameId).nightStart)} Night ends in ${formatDuration(state.config.nightDurationMs)}.`,
 				);
 			}
 		}
@@ -608,11 +616,11 @@ export class GameManager {
 			const victim = state.players.find((p) => p.did === resolution.killed);
 			state = applyWinCondition(state);
 			const victimRole = (victim?.role ?? 'villager') as Role;
-			dawnResults = flavor(DEFAULT_FLAVOR.nightKill[victimRole], {
+			dawnResults = flavor(this.flavorFor(gameId).nightKill[victimRole], {
 				victim: victim?.handle ?? 'unknown',
 			});
 		} else {
-			dawnResults = flavor(DEFAULT_FLAVOR.dawnPeaceful);
+			dawnResults = flavor(this.flavorFor(gameId).dawnPeaceful);
 		}
 
 		// Persist after game logic mutations, before any API calls
@@ -625,7 +633,7 @@ export class GameManager {
 			await this.sendGameDm(
 				state,
 				resolution.investigated.cop,
-				flavor(DEFAULT_FLAVOR.copResult, {
+				flavor(this.flavorFor(gameId).copResult, {
 					target: targetHandle,
 					result: resolution.investigated.result.toUpperCase(),
 				}),
@@ -986,7 +994,7 @@ export class GameManager {
 	private buildRoleDmText(game: GameState, playerDid: Did): string {
 		const player = game.players.find((p) => p.did === playerDid);
 		if (!player) return '';
-		const f = DEFAULT_FLAVOR;
+		const f = this.flavorFor(game.id);
 		const alignment = alignmentOf(player.role);
 		const teammates =
 			alignment === 'mafia'
@@ -1016,7 +1024,8 @@ export class GameManager {
 			.map((p) => `@${p.handle}`)
 			.join(', ');
 		const rolesStr = state.players.map((p) => `@${p.handle} (${p.role})`).join(', ');
-		const variants = state.winner === 'town' ? DEFAULT_FLAVOR.townWins : DEFAULT_FLAVOR.mafiaWins;
+		const f = this.flavorFor(state.id);
+		const variants = state.winner === 'town' ? f.townWins : f.mafiaWins;
 		const winText = flavor(variants, {
 			winners: `Winners: ${winnersStr}`,
 			roles: `Roles: ${rolesStr}`,
@@ -1279,7 +1288,7 @@ export class GameManager {
 		);
 
 		const id = Date.now().toString(36);
-		let state = createGame(id);
+		let state = createGame(id, {}, randomFlavorPackName());
 		this.persist(state);
 
 		// Add all popped players
@@ -1301,7 +1310,7 @@ export class GameManager {
 		// Reply in queue thread: "Game starting — check your DMs!"
 		if (triggerUri && triggerCid) {
 			await this.replyNoGame(
-				`🐺 Game #${id} starting — ${flavor(DEFAULT_FLAVOR.gameStart)}`,
+				`🐺 Game #${id} starting — ${flavor(this.flavorFor(id).gameStart)}`,
 				triggerUri,
 				triggerCid,
 			);
@@ -1490,7 +1499,7 @@ export class GameManager {
 		const players = inviteGameToPlayers(invite);
 		const id = inviteId; // Use the same ID for continuity
 
-		let state = createGame(id);
+		let state = createGame(id, {}, randomFlavorPackName());
 		this.persist(state);
 
 		for (const p of players) {
@@ -1510,7 +1519,7 @@ export class GameManager {
 		// Reply in invite thread: "Game starting — check your DMs!"
 		if (triggerUri && triggerCid) {
 			await this.replyNoGame(
-				`🐺 Game #${id} starting — ${flavor(DEFAULT_FLAVOR.gameStart)}`,
+				`🐺 Game #${id} starting — ${flavor(this.flavorFor(id).gameStart)}`,
 				triggerUri,
 				triggerCid,
 			);

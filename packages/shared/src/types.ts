@@ -158,4 +158,6 @@ export interface GameState {
 	createdAt: number;
 	/** DIDs of players whose role DMs failed delivery. Empty = all delivered. */
 	pendingDmDids: Did[];
+	/** Name of the flavor pack used for this game's text. */
+	flavorPackName: string;
 }

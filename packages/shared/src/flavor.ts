@@ -933,3 +933,24 @@ export function fillFlavor(template: string, vars: Record<string, string>): stri
 export function flavor(variants: string[], vars: Record<string, string> = {}): string {
 	return fillFlavor(pickFlavor(variants), vars);
 }
+
+/** All available flavor packs, keyed by name */
+export const FLAVOR_PACKS: Record<string, FlavorPack> = {
+	[DEFAULT_FLAVOR.name]: DEFAULT_FLAVOR,
+	[NOIR_FLAVOR.name]: NOIR_FLAVOR,
+	[CORPORATE_FLAVOR.name]: CORPORATE_FLAVOR,
+	[VICTORIAN_FLAVOR.name]: VICTORIAN_FLAVOR,
+	[MONSTER_MASH_FLAVOR.name]: MONSTER_MASH_FLAVOR,
+};
+
+const PACK_NAMES = Object.keys(FLAVOR_PACKS);
+
+/** Get a flavor pack by name, falling back to default */
+export function getFlavorPack(name: string): FlavorPack {
+	return FLAVOR_PACKS[name] ?? DEFAULT_FLAVOR;
+}
+
+/** Pick a random flavor pack name */
+export function randomFlavorPackName(): string {
+	return PACK_NAMES[Math.floor(Math.random() * PACK_NAMES.length)] ?? DEFAULT_FLAVOR.name;
+}
