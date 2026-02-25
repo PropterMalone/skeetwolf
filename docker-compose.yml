@@ -7,9 +7,10 @@ services:
       DB_PATH: /data/skeetwolf.db
     volumes:
       - ./data:/data
-    ports:
-      - "3002:3002"
     restart: unless-stopped
+    networks:
+      - default
+      - propter-net
     logging:
       driver: json-file
       options:
@@ -63,3 +64,8 @@ services:
       options:
         max-size: "10m"
         max-file: "3"
+
+networks:
+  propter-net:
+    name: propter-net
+    external: true
