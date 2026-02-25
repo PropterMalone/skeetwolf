@@ -13,7 +13,7 @@ import {
 } from './dm.js';
 import type { DmSender } from './dm.js';
 import { GameManager } from './game-manager.js';
-import { createLabeler } from './labeler.js';
+import { createLabelerClient } from './labeler-client.js';
 
 let BOT_HANDLE = 'skeetwolf.bsky.social';
 
@@ -62,12 +62,11 @@ async function main() {
 	const dm = useLiveDms ? createBlueskyDmSender(createChatAgent(agent)) : createConsoleDmSender();
 	const chatAgent = useLiveDms ? createChatAgent(agent) : null;
 
-	const labelerDid = process.env['LABELER_DID'];
-	const labelerKey = process.env['LABELER_SIGNING_KEY'];
+	const labelerUrl = process.env['LABELER_URL'];
+	const labelerSecret = process.env['LABELER_SECRET'];
 	const labeler =
-		labelerDid && labelerKey
-			? createLabeler(labelerDid, labelerKey, Number(process.env['LABELER_PORT'] || 3002))
-			: null;
+		labelerUrl && labelerSecret ? createLabelerClient(labelerUrl, labelerSecret) : null;
+	if (labeler) console.log(`Labeler: ${labelerUrl}`);
 
 	const manager = new GameManager(db, agent, dm, labeler);
 	await manager.hydrate();

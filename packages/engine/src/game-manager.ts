@@ -48,7 +48,6 @@ import {
 	submitNightAction,
 	tallyVotes,
 } from '@skeetwolf/shared';
-import type { LabelerServer } from '@skyware/labeler';
 import type Database from 'better-sqlite3';
 import {
 	type DmSender,
@@ -79,7 +78,7 @@ import {
 	saveInviteGame,
 	saveQueueEntry,
 } from './db.js';
-import { labelPost } from './labeler.js';
+import type { LabelerClient } from './labeler-client.js';
 
 const POST_KIND_LABELS: Record<PostKind, string[]> = {
 	announcement: ['skeetwolf', 'game-announcement'],
@@ -141,7 +140,7 @@ export class GameManager {
 		private db: Database.Database,
 		private agent: AtpAgent,
 		private dm: DmSender,
-		private labeler: LabelerServer | null = null,
+		private labeler: LabelerClient | null = null,
 	) {}
 
 	/** Number of active games in memory */
@@ -1132,9 +1131,7 @@ export class GameManager {
 			} catch (err) {
 				console.error(`Failed to create postgate for day thread ${ref.uri}:`, err);
 			}
-			if (this.labeler) {
-				await labelPost(this.labeler, ref.uri, 'skeetwolf-game');
-			}
+			this.labeler?.labelPost(ref.uri, 'mafia');
 			recordGamePost(this.db, {
 				uri: ref.uri,
 				gameId: state.id,
@@ -1145,6 +1142,9 @@ export class GameManager {
 		}
 
 		const [first] = refs;
+
+		// Watch the day thread for auto-labeling player replies
+		this.labeler?.watchThread(first.uri, 'mafia');
 
 		// Apply mentionRule threadgate on the first post — restricts replies to @mentioned users
 		try {
@@ -1174,9 +1174,7 @@ export class GameManager {
 			} catch (err) {
 				console.error(`Failed to create postgate for ${ref.uri}:`, err);
 			}
-			if (this.labeler) {
-				await labelPost(this.labeler, ref.uri, 'skeetwolf-game');
-			}
+			this.labeler?.labelPost(ref.uri, 'mafia');
 			recordGamePost(this.db, { uri: ref.uri, gameId, authorDid: botDid, kind, phase });
 		}
 
@@ -1216,9 +1214,7 @@ export class GameManager {
 			} catch (err) {
 				console.error(`Failed to create postgate for reply ${ref.uri}:`, err);
 			}
-			if (this.labeler) {
-				await labelPost(this.labeler, ref.uri, 'skeetwolf-game');
-			}
+			this.labeler?.labelPost(ref.uri, 'mafia');
 			recordGamePost(this.db, { uri: ref.uri, gameId: state.id, authorDid: botDid, kind, phase });
 		}
 
@@ -1251,10 +1247,7 @@ export class GameManager {
 			console.error(`Failed to create postgate for reply ${uri}:`, err);
 		}
 
-		// Label via external labeler
-		if (this.labeler) {
-			await labelPost(this.labeler, uri, 'skeetwolf-game');
-		}
+		this.labeler?.labelPost(uri, 'mafia');
 
 		const botDid = this.agent.session?.did ?? 'unknown';
 		const phase = state ? `${state.phase.kind}-${state.phase.number}` : null;
