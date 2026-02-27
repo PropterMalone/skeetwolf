@@ -2,16 +2,18 @@
  * Skeetwolf engine entry point.
  * Connects to Bluesky, hydrates game state, starts polling loop.
  */
-import { createAgent, pollMentions, resolveHandle } from './bot.js';
+import {
+	createAgent,
+	createChatAgent,
+	createConsoleRelayDmSender,
+	createRelayDmSender,
+	pollAllMentions,
+	pollInboundDms,
+	resolveHandle,
+} from './bot.js';
+import type { RelayDmSender } from './bot.js';
 import { parseDm, parseMention } from './command-parser.js';
 import { loadBotState, openDatabase, saveBotState } from './db.js';
-import {
-	createBlueskyDmSender,
-	createChatAgent,
-	createConsoleDmSender,
-	pollInboundDms,
-} from './dm.js';
-import type { DmSender } from './dm.js';
 import { GameManager } from './game-manager.js';
 import { createLabelerClient } from './labeler-client.js';
 
@@ -59,7 +61,9 @@ async function main() {
 		BOT_HANDLE = agent.session.handle;
 	}
 
-	const dm = useLiveDms ? createBlueskyDmSender(createChatAgent(agent)) : createConsoleDmSender();
+	const dm: RelayDmSender = useLiveDms
+		? createRelayDmSender(createChatAgent(agent))
+		: createConsoleRelayDmSender();
 	const chatAgent = useLiveDms ? createChatAgent(agent) : null;
 
 	const labelerUrl = process.env['LABELER_URL'];
@@ -85,10 +89,8 @@ async function main() {
 	);
 
 	let dmMessageId: string | undefined = loadBotState(db, 'dm_message_id') ?? undefined;
+	let mentionCutoff = loadBotState(db, 'mention_cutoff') ?? new Date().toISOString();
 	let backoffMs = POLL_INTERVAL_MS;
-
-	// Safety net: track processed mention URIs to prevent duplicate handling
-	// even if updateSeenNotifications races or fails
 	const processedMentionUris = new Set<string>();
 
 	let pollCount = 0;
@@ -97,22 +99,32 @@ async function main() {
 		let hadError = false;
 		pollCount++;
 
-		// --- Mentions (independent of DMs) ---
+		// --- Mentions ---
 		try {
 			const { notifications } = await withTimeout(
-				() => pollMentions(agent),
+				() =>
+					pollAllMentions(agent, {
+						botHandle: BOT_HANDLE,
+						searchSince: mentionCutoff,
+						retryOnSocketError: true,
+					}),
 				POLL_TIMEOUT_MS,
-				'pollMentions',
+				'pollAllMentions',
 			);
 
 			const botDid = agent.session?.did;
+			let newestIndexedAt = mentionCutoff;
+
 			for (const mention of notifications) {
 				if (botDid && mention.authorDid === botDid) continue;
-				if (processedMentionUris.has(mention.uri)) {
-					console.log(`Skipping already-processed mention: ${mention.uri}`);
-					continue;
-				}
+				if (mention.indexedAt <= mentionCutoff) continue;
+				if (processedMentionUris.has(mention.uri)) continue;
 				processedMentionUris.add(mention.uri);
+
+				if (mention.indexedAt > newestIndexedAt) {
+					newestIndexedAt = mention.indexedAt;
+				}
+
 				await handleMention(
 					manager,
 					agent,
@@ -124,7 +136,11 @@ async function main() {
 				);
 			}
 
-			// Cap the set size to prevent unbounded memory growth
+			if (newestIndexedAt > mentionCutoff) {
+				mentionCutoff = newestIndexedAt;
+				saveBotState(db, 'mention_cutoff', mentionCutoff);
+			}
+
 			if (processedMentionUris.size > 1000) {
 				const toDelete = [...processedMentionUris].slice(0, 500);
 				for (const uri of toDelete) processedMentionUris.delete(uri);
@@ -408,7 +424,7 @@ async function handleMention(
 
 async function handleDm(
 	manager: GameManager,
-	dm: DmSender,
+	dm: RelayDmSender,
 	senderDid: string,
 	text: string,
 ): Promise<void> {

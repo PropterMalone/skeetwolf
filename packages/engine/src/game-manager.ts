@@ -50,10 +50,10 @@ import {
 } from '@skeetwolf/shared';
 import type Database from 'better-sqlite3';
 import {
-	type DmSender,
 	type PostRef,
+	type RelayDmSender,
 	type ThreadReply,
-	createDayThreadgate,
+	createMentionThreadgate,
 	createPostgate,
 	createThreadgate,
 	deletePostgate,
@@ -139,7 +139,7 @@ export class GameManager {
 	constructor(
 		private db: Database.Database,
 		private agent: AtpAgent,
-		private dm: DmSender,
+		private dm: RelayDmSender,
 		private labeler: LabelerClient | null = null,
 	) {}
 
@@ -372,8 +372,8 @@ export class GameManager {
 				message += `\n\nHow to play: ${faqUrl}`;
 			}
 
-			const ok = await this.dm.sendDm(player.did, message);
-			if (!ok) {
+			const result = await this.dm.sendDm(player.did, message);
+			if (result !== 'sent') {
 				failures.push({ did: player.did, handle: player.handle, role: player.role, addedAt: now });
 			}
 		}
@@ -920,8 +920,11 @@ export class GameManager {
 					timedOut.push(failure);
 				} else {
 					// Retry the DM
-					const ok = await this.dm.sendDm(failure.did, this.buildRoleDmText(game, failure.did));
-					if (!ok) {
+					const retryResult = await this.dm.sendDm(
+						failure.did,
+						this.buildRoleDmText(game, failure.did),
+					);
+					if (retryResult !== 'sent') {
 						stillFailing.push(failure);
 					}
 				}
@@ -964,11 +967,11 @@ export class GameManager {
 				console.log(`Replaced ${expired.handle} with ${replacement.handle} in game ${gameId}`);
 
 				// Send role DM to replacement
-				const ok = await this.dm.sendDm(
+				const replaceResult = await this.dm.sendDm(
 					replacement.did,
 					this.buildRoleDmText(game, replacement.did),
 				);
-				if (!ok) {
+				if (replaceResult !== 'sent') {
 					// Replacement also can't receive DMs — add them to failures
 					const player = game.players.find((p) => p.did === replacement.did);
 					if (player) {
@@ -1008,8 +1011,8 @@ export class GameManager {
 
 	/** Send a DM during an active game. On failure, post a public warning nudging the player. */
 	private async sendGameDm(state: GameState, recipientDid: Did, text: string): Promise<boolean> {
-		const ok = await this.dm.sendDm(recipientDid, text);
-		if (!ok) {
+		const dmResult = await this.dm.sendDm(recipientDid, text);
+		if (dmResult !== 'sent') {
 			const player = state.players.find((p) => p.did === recipientDid);
 			if (player) {
 				const warning = `⚠️ @${player.handle} — couldn't send you a DM. Either follow @skeetwolf.bsky.social or open your Bluesky chat settings so you can receive game messages.`;
@@ -1024,7 +1027,7 @@ export class GameManager {
 				}
 			}
 		}
-		return ok;
+		return dmResult === 'sent';
 	}
 
 	/** Build role DM text for a specific player */
@@ -1111,7 +1114,12 @@ export class GameManager {
 			} catch {
 				// Postgate might not exist (e.g., first run after upgrade)
 			}
-			refs = await postWithQuoteChain(this.agent, text, previousDayUri, previousDayCid, labels);
+			refs = await postWithQuoteChain(
+				this.agent,
+				text,
+				{ uri: previousDayUri, cid: previousDayCid },
+				{ labels },
+			);
 			try {
 				await createPostgate(this.agent, previousDayUri);
 			} catch (err) {
@@ -1119,7 +1127,7 @@ export class GameManager {
 			}
 		} else {
 			// Day 1: top-level post
-			refs = await postMessageChain(this.agent, text, labels);
+			refs = await postMessageChain(this.agent, text, { labels });
 		}
 
 		// Postgate, label, and record every post in the chain
@@ -1148,7 +1156,7 @@ export class GameManager {
 
 		// Apply mentionRule threadgate on the first post — restricts replies to @mentioned users
 		try {
-			await createDayThreadgate(this.agent, first.uri);
+			await createMentionThreadgate(this.agent, first.uri);
 		} catch (err) {
 			console.error(`Failed to create day threadgate for ${first.uri}:`, err);
 		}
@@ -1163,7 +1171,9 @@ export class GameManager {
 		text: string,
 		kind: PostKind,
 	): Promise<{ uri: string; cid: string }> {
-		const [first, ...rest] = await postMessageChain(this.agent, text, POST_KIND_LABELS[kind]);
+		const [first, ...rest] = await postMessageChain(this.agent, text, {
+			labels: POST_KIND_LABELS[kind],
+		});
 
 		const botDid = this.agent.session?.did ?? 'unknown';
 		const state = this.games.get(gameId);
@@ -1195,15 +1205,10 @@ export class GameManager {
 			return this.post(state.id, text, kind);
 		}
 
-		const [first, ...rest] = await replyToPostChain(
-			this.agent,
-			text,
-			rootUri,
-			rootCid,
-			rootUri,
-			rootCid,
-			POST_KIND_LABELS[kind],
-		);
+		const root = { uri: rootUri, cid: rootCid };
+		const [first, ...rest] = await replyToPostChain(this.agent, text, root, root, {
+			labels: POST_KIND_LABELS[kind],
+		});
 
 		// Postgate, label, and record every post in the chain
 		const botDid = this.agent.session?.did ?? 'unknown';
@@ -1230,15 +1235,9 @@ export class GameManager {
 		const rootCid = state?.dayThreadCid ?? state?.announcementCid ?? parentCid;
 
 		const replyLabels = POST_KIND_LABELS.reply;
-		const { uri } = await replyToPost(
-			this.agent,
-			text,
-			parentUri,
-			parentCid,
-			rootUri,
-			rootCid,
-			replyLabels,
-		);
+		const parent = { uri: parentUri, cid: parentCid };
+		const root = { uri: rootUri, cid: rootCid };
+		const { uri } = await replyToPost(this.agent, text, parent, root, { labels: replyLabels });
 
 		// Postgate on reply
 		try {
@@ -1601,7 +1600,8 @@ export class GameManager {
 	/** Reply to a mention that isn't associated with a game thread */
 	async replyNoGame(text: string, parentUri: string, parentCid: string): Promise<void> {
 		const replyLabels = POST_KIND_LABELS.reply;
-		await replyToPost(this.agent, text, parentUri, parentCid, parentUri, parentCid, replyLabels);
+		const parent = { uri: parentUri, cid: parentCid };
+		await replyToPost(this.agent, text, parent, parent, { labels: replyLabels });
 	}
 
 	/** Build the bsky.app feed URL for a game */

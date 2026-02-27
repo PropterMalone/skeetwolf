@@ -1,26 +1,27 @@
 import type { AtpAgent } from '@atproto/api';
 import { describe, expect, it, vi } from 'vitest';
 import {
-	createBlueskyDmSender,
 	createChatAgent,
-	createConsoleDmSender,
+	createConsoleRelayDmSender,
+	createRelayDmSender,
 	pollInboundDms,
-} from './dm.js';
+} from './bot.js';
 
-describe('createConsoleDmSender', () => {
+describe('createConsoleRelayDmSender', () => {
 	it('sends a DM to console', async () => {
 		const spy = vi.spyOn(console, 'log').mockImplementation(() => {});
-		const sender = createConsoleDmSender();
+		const sender = createConsoleRelayDmSender();
 
-		await sender.sendDm('did:plc:alice', 'hello');
+		const result = await sender.sendDm('did:plc:alice', 'hello');
 
+		expect(result).toBe('sent');
 		expect(spy).toHaveBeenCalledWith('[DM → did:plc:alice] hello');
 		spy.mockRestore();
 	});
 
 	it('creates and sends to relay group', async () => {
 		const spy = vi.spyOn(console, 'log').mockImplementation(() => {});
-		const sender = createConsoleDmSender();
+		const sender = createConsoleRelayDmSender();
 
 		sender.createRelayGroup('mafia-1', ['did:plc:alice', 'did:plc:bob']);
 		await sender.sendToRelayGroup('mafia-1', 'lets kill charlie');
@@ -33,7 +34,7 @@ describe('createConsoleDmSender', () => {
 
 	it('handles unknown relay group gracefully', async () => {
 		const spy = vi.spyOn(console, 'log').mockImplementation(() => {});
-		const sender = createConsoleDmSender();
+		const sender = createConsoleRelayDmSender();
 
 		// No members → no output
 		await sender.sendToRelayGroup('nonexistent', 'hello');
@@ -81,16 +82,17 @@ describe('createChatAgent', () => {
 	});
 });
 
-describe('createBlueskyDmSender', () => {
+describe('createRelayDmSender', () => {
 	it('sendDm resolves convo and sends message', async () => {
 		const mock = createMockChatAgent();
 		mock.stubs.getConvoForMembers.mockResolvedValue({
 			data: { convo: { id: 'convo-alice' } },
 		});
-		const sender = createBlueskyDmSender(mock as unknown as AtpAgent);
+		const sender = createRelayDmSender(mock as unknown as AtpAgent);
 
-		await sender.sendDm('did:plc:alice', 'hello');
+		const result = await sender.sendDm('did:plc:alice', 'hello');
 
+		expect(result).toBe('sent');
 		expect(mock.stubs.getConvoForMembers).toHaveBeenCalledWith({
 			members: ['did:plc:alice'],
 		});
@@ -105,7 +107,7 @@ describe('createBlueskyDmSender', () => {
 		mock.stubs.getConvoForMembers.mockResolvedValue({
 			data: { convo: { id: 'convo-alice' } },
 		});
-		const sender = createBlueskyDmSender(mock as unknown as AtpAgent);
+		const sender = createRelayDmSender(mock as unknown as AtpAgent);
 
 		await sender.sendDm('did:plc:alice', 'first');
 		await sender.sendDm('did:plc:alice', 'second');
@@ -121,7 +123,7 @@ describe('createBlueskyDmSender', () => {
 			callCount++;
 			return { data: { convo: { id: `convo-${callCount}` } } };
 		});
-		const sender = createBlueskyDmSender(mock as unknown as AtpAgent);
+		const sender = createRelayDmSender(mock as unknown as AtpAgent);
 
 		sender.createRelayGroup('mafia-1', ['did:plc:alice', 'did:plc:bob']);
 		await sender.sendToRelayGroup('mafia-1', 'night action');
@@ -140,7 +142,7 @@ describe('createBlueskyDmSender', () => {
 	it('sendToRelayGroup with unknown group logs error and does not throw', async () => {
 		const mock = createMockChatAgent();
 		const spy = vi.spyOn(console, 'error').mockImplementation(() => {});
-		const sender = createBlueskyDmSender(mock as unknown as AtpAgent);
+		const sender = createRelayDmSender(mock as unknown as AtpAgent);
 
 		await sender.sendToRelayGroup('nonexistent', 'hello');
 

@@ -66,7 +66,7 @@ function createMockDm() {
 		sender: {
 			async sendDm(did: string, text: string) {
 				sent.push({ did, text });
-				return true;
+				return 'sent' as const;
 			},
 			createRelayGroup(groupId: string, memberDids: string[]) {
 				groups.set(groupId, memberDids);
@@ -686,7 +686,7 @@ describe('GameManager DM retry gate', () => {
 			sender: {
 				async sendDm(did: string, text: string) {
 					sent.push({ did, text });
-					return !failDids.has(did);
+					return failDids.has(did) ? ('error' as const) : ('sent' as const);
 				},
 				createRelayGroup(groupId: string, memberDids: string[]) {
 					groups.set(groupId, memberDids);

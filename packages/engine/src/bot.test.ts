@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from 'vitest';
 import {
-	createDayThreadgate,
+	createMentionThreadgate,
 	createPostgate,
 	createThreadgate,
 	deletePostgate,
@@ -166,10 +166,13 @@ describe('postWithQuote', () => {
 	it('posts with quote embed and labels', async () => {
 		const agent = mockAgent();
 
-		// biome-ignore lint/suspicious/noExplicitAny: test mock
-		const result = await postWithQuote(agent as any, 'Day 2!', 'at://prev/post/1', 'cid-prev', [
-			'skeetwolf',
-		]);
+		const result = await postWithQuote(
+			// biome-ignore lint/suspicious/noExplicitAny: test mock
+			agent as any,
+			'Day 2!',
+			{ uri: 'at://prev/post/1', cid: 'cid-prev' },
+			{ labels: ['skeetwolf'] },
+		);
 
 		expect(result).toEqual({ uri: 'at://bot/post/1', cid: 'cid-1' });
 		const call = agent.post.mock.calls[0]?.[0];
@@ -185,7 +188,7 @@ describe('postWithQuote', () => {
 		const agent = mockAgent();
 
 		// biome-ignore lint/suspicious/noExplicitAny: test mock
-		await postWithQuote(agent as any, 'text', 'at://x/y/z', 'cid-x');
+		await postWithQuote(agent as any, 'text', { uri: 'at://x/y/z', cid: 'cid-x' });
 
 		const call = agent.post.mock.calls[0]?.[0];
 		expect(call.labels).toBeUndefined();
@@ -195,7 +198,10 @@ describe('postWithQuote', () => {
 		const agent = mockAgent();
 
 		// biome-ignore lint/suspicious/noExplicitAny: test mock
-		await postWithQuote(agent as any, 'Hey @alice.bsky.social!', 'at://x/y/z', 'cid-x');
+		await postWithQuote(agent as any, 'Hey @alice.bsky.social!', {
+			uri: 'at://x/y/z',
+			cid: 'cid-x',
+		});
 
 		const call = agent.post.mock.calls[0]?.[0];
 		expect(call.facets).toBeDefined();
@@ -266,7 +272,7 @@ describe('deletePostgate', () => {
 	});
 });
 
-describe('createDayThreadgate', () => {
+describe('createMentionThreadgate', () => {
 	it('creates a threadgate with mentionRule', async () => {
 		const createRecord = vi.fn().mockResolvedValue({});
 		const agent = {
@@ -275,7 +281,7 @@ describe('createDayThreadgate', () => {
 		};
 
 		// biome-ignore lint/suspicious/noExplicitAny: test mock
-		await createDayThreadgate(agent as any, 'at://did:plc:bot/app.bsky.feed.post/day1');
+		await createMentionThreadgate(agent as any, 'at://did:plc:bot/app.bsky.feed.post/day1');
 
 		expect(createRecord).toHaveBeenCalledOnce();
 		const arg = createRecord.mock.calls[0]?.[0];
@@ -287,7 +293,7 @@ describe('createDayThreadgate', () => {
 	it('throws without active session', async () => {
 		const agent = { session: null, api: { com: { atproto: { repo: { createRecord: vi.fn() } } } } };
 		// biome-ignore lint/suspicious/noExplicitAny: test mock
-		await expect(createDayThreadgate(agent as any, 'at://x/y/z')).rejects.toThrow(
+		await expect(createMentionThreadgate(agent as any, 'at://x/y/z')).rejects.toThrow(
 			'no active session',
 		);
 	});
