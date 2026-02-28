@@ -829,6 +829,8 @@ export class GameManager {
 		const game = this.findGameForPlayer(senderDid);
 		if (!game) return 'not in an active game';
 
+		if (game.phase.kind !== 'night') return 'mafia chat is only available at night';
+
 		const sender = game.players.find((p) => p.did === senderDid);
 		if (!sender || alignmentOf(sender.role) !== 'mafia') return 'not a mafia member';
 

@@ -233,6 +233,27 @@ describe('GameManager.relayMafiaChat', () => {
 		expect(error).toBe('not a mafia member');
 	});
 
+	it('rejects relay during day phase', async () => {
+		const dm = createMockDm();
+		const manager = new GameManager(createMockDb(), createMockAgent(), dm.sender);
+		await manager.newGame('g1');
+		for (let i = 0; i < 7; i++) {
+			manager.signup('g1', `did:plc:p${i}`, `player${i}.bsky.social`);
+		}
+		await manager.startGame('g1');
+		await manager.endNight('g1');
+
+		const game = manager.findGameForPlayer('did:plc:p0');
+		expect(game?.phase.kind).toBe('day');
+		const mafiaPlayer = game?.players.find((p) => alignmentOf(p.role) === 'mafia');
+		expect(mafiaPlayer).toBeDefined();
+
+		dm.relayed.length = 0;
+		const error = await manager.relayMafiaChat(mafiaPlayer?.did as string, 'scheming in public');
+		expect(error).toBe('mafia chat is only available at night');
+		expect(dm.relayed).toHaveLength(0);
+	});
+
 	it('rejects player not in a game', async () => {
 		const dm = createMockDm();
 		const manager = new GameManager(createMockDb(), createMockAgent(), dm.sender);
