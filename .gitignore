@@ -5,3 +5,4 @@ coverage/
 .env
 .wrangler/
 data/
+CLAUDE.md
