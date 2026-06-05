@@ -1,0 +1,25 @@
+{
+	"entry": [
+		"packages/shared/src/index.ts",
+		"packages/engine/src/index.ts",
+		"packages/feed/src/index.ts",
+		"packages/feed/src/register.ts",
+		"packages/feed/src/handler.ts",
+		"packages/dashboard/src/index.ts",
+		"packages/**/*.test.ts",
+		"scripts/cleanup-spam.ts",
+		"scripts/live-test-queue.ts",
+		"scripts/register-feed.ts",
+		"scripts/retrigger-dms.mjs",
+		"scripts/set-profile-images.ts",
+		"scripts/smoke-test-dms.ts"
+	],
+	"ignorePatterns": [
+		"**/dist/**",
+		"**/node_modules/**",
+		"packages/engine/src/bot.ts",
+		"data/**",
+		"coverage/**"
+	],
+	"ignoreDependencies": ["propter-bsky-kit", "@skeetwolf/feed", "@skeetwolf/shared"]
+}

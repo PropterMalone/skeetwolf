@@ -1,0 +1,12 @@
+node_modules/
+dist/
+coverage/
+*.tsbuildinfo
+.env
+.git/
+.claude/
+.beads/
+*.db
+*.db-wal
+*.db-shm
+data/

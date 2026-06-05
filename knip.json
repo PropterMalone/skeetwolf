@@ -1,0 +1,32 @@
+{
+	"$schema": "https://unpkg.com/knip@5/schema.json",
+	"workspaces": {
+		".": {
+			"entry": [
+				"scripts/*.ts",
+				"scripts/*.mjs"
+			],
+			"project": [
+				"scripts/**/*.{ts,mjs}"
+			],
+			"ignoreDependencies": [
+				"@atproto/api",
+				"@skeetwolf/shared",
+				"@skeetwolf/feed",
+				"better-sqlite3"
+			]
+		},
+		"packages/shared": {},
+		"packages/engine": {
+			"ignoreDependencies": ["ts-node"]
+		},
+		"packages/feed": {
+			"ignoreDependencies": ["ts-node"],
+			"ignoreBinaries": ["tsx"]
+		},
+		"packages/dashboard": {
+			"ignoreDependencies": ["ts-node"]
+		}
+	},
+	"ignoreExportsUsedInFile": true
+}

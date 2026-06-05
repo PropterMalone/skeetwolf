@@ -1,0 +1,11 @@
+node_modules/
+dist/
+coverage/
+*.tsbuildinfo
+.env
+.wrangler/
+data/
+CLAUDE.md
+
+# internal beads issue-tracker data — never publish
+.beads/
