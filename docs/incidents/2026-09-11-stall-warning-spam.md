@@ -37,3 +37,24 @@ Follow-up: repair and verify the normal Docker build for the checkout's sibling
 The current Dockerfile copies only this repository, so that sibling dependency
 is absent from its build context. Do not replace the tested incident image with
 an unverified full rebuild.
+
+## Timeout persistence follow-up
+
+Restart hydration also reset every pending player's six-hour timeout. Game state
+now persists `pendingDmStartedAt` per player on initial failure and after retries
+or replacement. Hydration reuses those timestamps; legacy states fall back to
+Night 0's `phaseStartedAt`. Successful completion clears the saved timers.
+Replacement players receive their own six-hour window, preserved across restarts.
+
+All 243 tests, full validation, and build passed. Three new real-SQLite regression
+cases cover the original deadline, legacy saves, and a replacement's deadline.
+The production image passed separate network-disabled tests for those deadlines
+and for the previous warning deduplication fix.
+
+Deployed image: `skeetwolf-engine:timeout-fix-20260911`, ID
+`sha256:b03524a0a3a36414b6a9392601855bae4c012fbac1229e895782194bf21995f3`.
+As with the initial incident fix, only the matching compiled manager changes were
+applied to the existing production release. Evidence and database backup are in
+`/tmp/skeetwolf-timeout-fix/`. The live game's persisted timeout was verified as
+already expired, with no replacement queued; the next queued replacement can be
+selected without another six-hour wait.
