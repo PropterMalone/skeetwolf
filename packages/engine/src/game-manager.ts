@@ -204,7 +204,13 @@ export class GameManager {
 					.map((did) => {
 						const player = game.players.find((p) => p.did === did);
 						if (!player) return null;
-						return { did, handle: player.handle, role: player.role, addedAt: now };
+						return {
+							did,
+							handle: player.handle,
+							role: player.role,
+							// Legacy saves predate per-player timers; use Night 0's start.
+							addedAt: game.pendingDmStartedAt?.[did] ?? game.phaseStartedAt,
+						};
 					})
 					.filter((f): f is PendingDmFailure => f !== null);
 				if (failures.length > 0) {
@@ -413,7 +419,7 @@ export class GameManager {
 		}
 
 		// Mark DM delivery complete
-		const updated = { ...game, pendingDmDids: [] as Did[] };
+		const updated = { ...game, pendingDmDids: [] as Did[], pendingDmStartedAt: {} };
 		this.persist(updated);
 	}
 
@@ -457,7 +463,11 @@ export class GameManager {
 		this.pendingDmRetries.set(game.id, pending);
 
 		// Persist which DIDs have pending DMs
-		const updated = { ...game, pendingDmDids: failures.map((f) => f.did) };
+		const updated = {
+			...game,
+			pendingDmDids: failures.map((f) => f.did),
+			pendingDmStartedAt: Object.fromEntries(failures.map((f) => [f.did, f.addedAt])),
+		};
 		this.persist(updated);
 
 		// Warn failed players (fire-and-forget)
@@ -1013,7 +1023,11 @@ export class GameManager {
 				console.log(`DM delivery complete for game ${gameId} — game starting`);
 			} else {
 				pending.failures = stillFailing;
-				const updated = { ...game, pendingDmDids: stillFailing.map((f) => f.did) };
+				const updated = {
+					...game,
+					pendingDmDids: stillFailing.map((f) => f.did),
+					pendingDmStartedAt: Object.fromEntries(stillFailing.map((f) => [f.did, f.addedAt])),
+				};
 				this.persist(updated);
 			}
 		}

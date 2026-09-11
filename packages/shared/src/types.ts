@@ -185,6 +185,8 @@ export interface GameState {
 	createdAt: number;
 	/** DIDs of players whose role DMs failed delivery. Empty = all delivered. */
 	pendingDmDids: Did[];
+	/** Original failed-delivery time per player; absent in legacy saved games. */
+	pendingDmStartedAt?: Record<Did, number>;
 	/** Name of the flavor pack used for this game's text. */
 	flavorPackName: string;
 	/** Remaining vigilante shots (0 if no vigilante in game) */

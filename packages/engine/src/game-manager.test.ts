@@ -858,6 +858,82 @@ describe('GameManager DM retry gate', () => {
 		},
 	);
 
+	it.each([false, true])(
+		'keeps the original six-hour deadline after restart (legacy state: %s)',
+		async (legacy) => {
+			const db = openDatabase(':memory:');
+			const start = 1_800_000_000_000;
+			const hour = 60 * 60 * 1000;
+			const clock = vi.spyOn(Date, 'now').mockReturnValue(start);
+			try {
+				const agent = createMockAgent();
+				const dm = createFailingDm(new Set(['did:plc:p3']));
+				const manager = new GameManager(db, agent, dm.sender);
+				await manager.newGame('g1');
+				for (let i = 0; i < 7; i++) manager.signup('g1', `did:plc:p${i}`, `player${i}.bsky.social`);
+				await manager.startGame('g1');
+				if (legacy)
+					db.prepare("UPDATE games SET state = json_remove(state, '$.pendingDmStartedAt')").run();
+				clock.mockReturnValue(start + 5 * hour);
+				const restarted = new GameManager(db, agent, dm.sender);
+				await restarted.hydrate();
+				await restarted.addToQueue(
+					'did:plc:replacement',
+					'replacement.bsky.social',
+					'at://trigger/post/1',
+					'cid',
+				);
+				await restarted.tick(start + 6 * hour - 1);
+				expect(restarted.getGame('g1')?.players.some((p) => p.did === 'did:plc:p3')).toBe(true);
+				await restarted.tick(start + 6 * hour);
+				expect(restarted.getGame('g1')?.players.some((p) => p.did === 'did:plc:replacement')).toBe(
+					true,
+				);
+				expect(restarted.hasPendingDms('g1')).toBe(false);
+			} finally {
+				clock.mockRestore();
+				db.close();
+			}
+		},
+	);
+
+	it('preserves a replacement player’s own six-hour window across restart', async () => {
+		const db = openDatabase(':memory:');
+		const start = 1_800_000_000_000;
+		const hour = 60 * 60 * 1000;
+		const clock = vi.spyOn(Date, 'now').mockReturnValue(start);
+		try {
+			const agent = createMockAgent();
+			const dm = createFailingDm(new Set(['did:plc:p3', 'did:plc:replacement']));
+			const manager = new GameManager(db, agent, dm.sender);
+			await manager.newGame('g1');
+			for (let i = 0; i < 7; i++) manager.signup('g1', `did:plc:p${i}`, `player${i}.bsky.social`);
+			await manager.startGame('g1');
+			await manager.addToQueue(
+				'did:plc:replacement',
+				'replacement.bsky.social',
+				'at://trigger/post/1',
+				'cid',
+			);
+			clock.mockReturnValue(start + 6 * hour);
+			await manager.tick(Date.now());
+			clock.mockReturnValue(start + 7 * hour);
+			const restarted = new GameManager(db, agent, dm.sender);
+			await restarted.hydrate();
+			await restarted.addToQueue('did:plc:next', 'next.bsky.social', 'at://trigger/post/2', 'cid');
+			await restarted.tick(start + 12 * hour - 1);
+			expect(restarted.getGame('g1')?.players.some((p) => p.did === 'did:plc:replacement')).toBe(
+				true,
+			);
+			await restarted.tick(start + 12 * hour);
+			expect(restarted.getGame('g1')?.players.some((p) => p.did === 'did:plc:next')).toBe(true);
+			expect(restarted.hasPendingDms('g1')).toBe(false);
+		} finally {
+			clock.mockRestore();
+			db.close();
+		}
+	});
+
 	it('skips phase transitions for pending games', async () => {
 		const failDids = new Set(['did:plc:p3']);
 		const { manager } = await setupGameWithFailingDm(failDids);
