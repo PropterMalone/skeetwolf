@@ -1,5 +1,6 @@
 import { alignmentOf } from '@skeetwolf/shared';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { openDatabase } from './db.js';
 import { GameManager } from './game-manager.js';
 
 let postCounter = 0;
@@ -822,6 +823,40 @@ describe('GameManager DM retry gate', () => {
 		);
 		expect(stallPost).toBeDefined();
 	});
+
+	it.each([false, true])(
+		'attempts a stall warning only once across ticks and restarts (post fails: %s)',
+		async (postFails) => {
+			const db = openDatabase(':memory:');
+			try {
+				const agent = createMockAgent();
+				const dm = createFailingDm(new Set(['did:plc:p3']));
+				const manager = new GameManager(db, agent, dm.sender);
+				await manager.newGame('g1');
+				for (let i = 0; i < 7; i++) {
+					manager.signup('g1', `did:plc:p${i}`, `player${i}.bsky.social`);
+				}
+				await manager.startGame('g1');
+				agent.post.mockClear();
+				if (postFails) agent.post.mockRejectedValue(new Error('response lost after write'));
+				const expired = Date.now() + 6 * 60 * 60 * 1000 + 1000;
+				await manager.tick(expired);
+				await manager.tick(expired + 30_000);
+				const restarted = new GameManager(db, agent, dm.sender);
+				await restarted.hydrate();
+				await restarted.tick(expired + 60_000);
+				expect(
+					agent.post.mock.calls.filter((call: [{ text: string }]) =>
+						call[0].text.includes('is stalled'),
+					),
+				).toHaveLength(1);
+				expect(manager.hasPendingDms('g1')).toBe(true);
+				expect(restarted.hasPendingDms('g1')).toBe(true);
+			} finally {
+				db.close();
+			}
+		},
+	);
 
 	it('skips phase transitions for pending games', async () => {
 		const failDids = new Set(['did:plc:p3']);

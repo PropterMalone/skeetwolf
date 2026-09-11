@@ -71,9 +71,11 @@ import {
 	clearQueueEntries,
 	loadActiveGames,
 	loadActiveInviteGames,
+	loadBotState,
 	loadPublicQueue,
 	recordGamePost,
 	removeQueueEntry,
+	saveBotState,
 	saveGame,
 	saveInviteGame,
 	saveQueueEntry,
@@ -937,7 +939,13 @@ export class GameManager {
 				game = this.games.get(gameId) ?? game;
 				const replacement = this.publicQueue.entries[0];
 				if (!replacement) {
-					// No replacement available — post warning
+					// Claim before posting: a lost response must not cause another public ping.
+					const warningKey = `dm_stall_warning:${gameId}:${expired.did}`;
+					if (loadBotState(this.db, warningKey)) {
+						stillFailing.push(expired);
+						continue;
+					}
+					saveBotState(this.db, warningKey, String(now));
 					try {
 						const text = `⚠️ Game #${gameId} is stalled — @${expired.handle} can't receive DMs and no one is in the queue to replace them.`;
 						if (pending.triggerUri && pending.triggerCid) {
